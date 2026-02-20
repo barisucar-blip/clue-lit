@@ -2,13 +2,17 @@ import streamlit as st
 import random
 from datetime import datetime
 
-# Version control
-APP_VERSION = "Shiftword v3.7 - Guaranteed Tiles - Feb 20 2026"
+# ==============================
+# VERSION CONTROL - 7
+# ==============================
+APP_VERSION = "Shiftword v3.9 - Guaranteed Tiles - Feb 20 2026"
 st.title("🧩 Shiftword Game")
 st.caption(APP_VERSION)
 st.caption(f"Loaded at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-# Game rules
+# ==============================
+# GAME RULES
+# ==============================
 st.markdown("""
 ### 📜 How to Play
 1. Guess the hidden word.
@@ -16,49 +20,63 @@ st.markdown("""
 3. You only get:
    - The **Theme**
    - The **Number of Letters**
-4. **Tiles must be followed adjacently** (vertical or horizontal only, no diagonal).
+4. **Letter tiles must be chosen following the route of adjacent tiles** (vertical or horizontal only, **not diagonal**).
 5. Enter words with the correct length.
 """)
 st.write("---")
 
-# Word bank
+# ==============================
+# WORD BANK
+# ==============================
 WORD_BANK = {
     "Nature": ["RIVER", "STONE", "PLANT", "CLOUD", "OCEAN"],
     "Animals": ["TIGER", "HORSE", "SNAKE", "ZEBRA", "EAGLE"],
     "Space": ["EARTH", "COMET", "ORBIT", "ALIEN", "ROVER"]
 }
 
-# Session state init
+# ==============================
+# SESSION STATE INIT
+# ==============================
 if "initialized" not in st.session_state:
-    st.session_state.word = random.choice(random.choice(list(WORD_BANK.values())))
     st.session_state.theme = random.choice(list(WORD_BANK.keys()))
-    st.session_state.attempts = 5
+    st.session_state.word = random.choice(WORD_BANK[st.session_state.theme])
     st.session_state.guesses = []
+    st.session_state.attempts = 5
     st.session_state.game_over = False
     st.session_state.initialized = True
 
-# Clues
+# ==============================
+# DISPLAY CLUES
+# ==============================
 st.subheader("🔎 Clues")
 st.write(f"📌 Theme: **{st.session_state.theme}**")
-st.write(f"🔤 Number of Letters: **{len(st.session_state.word)}**")
+st.write(f"🔤 Number of letters: **{len(st.session_state.word)}**")
 st.write("---")
 
-# Display all previous guesses (guaranteed to show)
+# ==============================
+# DISPLAY PREVIOUS GUESSES AS "TILES"
+# ==============================
 st.subheader("Previous Guesses")
 for guess in st.session_state.guesses:
-    # Display letters separated by spaces inside a single text line
+    # Guaranteed display using brackets for each letter
     st.text(" ".join([f"[{c}]" for c in guess]))
 
-# Input
+# ==============================
+# GAME INPUT
+# ==============================
 if not st.session_state.game_over:
-    guess = st.text_input("Enter your guess (letters only, follow tile adjacency)").upper()
+    guess = st.text_input("Enter your guess (letters only)").upper()
+    
     if st.button("Submit Guess"):
         if len(guess) != len(st.session_state.word):
-            st.error("Word length does not match.")
+            st.error("Word length does not match!")
         elif not guess.isalpha():
-            st.error("Only letters allowed.")
+            st.error("Only letters allowed!")
         else:
+            # Save the guess
             st.session_state.guesses.append(guess)
+
+            # Check for correct guess
             if guess == st.session_state.word:
                 st.success("🎉 Correct! You won!")
                 st.session_state.game_over = True
@@ -69,8 +87,10 @@ if not st.session_state.game_over:
                     st.error(f"Game Over! The word was: {st.session_state.word}")
                     st.session_state.game_over = True
 
-# Restart button
+# ==============================
+# RESTART BUTTON
+# ==============================
 if st.session_state.game_over:
     if st.button("🔄 Play Again"):
         st.session_state.clear()
-        st.rerun()
+        st.experimental_rerun()

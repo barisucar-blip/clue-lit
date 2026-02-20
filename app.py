@@ -3,9 +3,9 @@ import random
 from datetime import datetime
 
 # ==============================
-# VERSION CONTROL - 3
+# VERSION CONTROL
 # ==============================
-APP_VERSION = "Shiftword v3.3 - Tiles Fixed - Feb 20 2026"
+APP_VERSION = "Shiftword v3.4 - Columns Tiles - Feb 20 2026"
 
 st.title("🧩 Shiftword Game")
 st.caption(APP_VERSION)
@@ -59,29 +59,25 @@ st.write(f"🔤 Number of Letters: **{len(st.session_state.word)}**")
 st.write("---")
 
 # ==============================
-# TILE DISPLAY FUNCTION
+# TILE DISPLAY FUNCTION USING COLUMNS
 # ==============================
 def display_tiles_row(word):
-    html = '<div style="display:flex; flex-direction:row;">'
-    for letter in word:
-        html += f"""
-        <div style="
-            width:50px;
-            height:50px;
-            border:2px solid white;
-            margin:3px;
-            font-size:28px;
-            font-weight:bold;
-            text-align:center;
-            line-height:50px;
-            background-color:#1f1f1f;
-            color:white;
-        ">
-        {letter}
-        </div>
-        """
-    html += "</div>"
-    st.markdown(html, unsafe_allow_html=True)
+    cols = st.columns(len(word))
+    for i, letter in enumerate(word):
+        with cols[i]:
+            st.markdown(f"""
+                <div style="
+                    width:50px;
+                    height:50px;
+                    border:2px solid white;
+                    background-color:#1f1f1f;
+                    color:white;
+                    text-align:center;
+                    line-height:50px;
+                    font-weight:bold;
+                    font-size:28px;
+                ">{letter}</div>
+            """, unsafe_allow_html=True)
 
 # ==============================
 # DISPLAY PREVIOUS GUESSES
@@ -91,21 +87,19 @@ for guess in st.session_state.guesses:
     display_tiles_row(guess)
 
 # ==============================
-# GAME INPUT
+# GAME INPUT -4 
 # ==============================
 if not st.session_state.game_over:
-
     guess = st.text_input("Enter your guess (use only adjacent tiles route)").upper()
 
     if st.button("Submit Guess"):
-
         if len(guess) != len(st.session_state.word):
             st.error("Word length does not match.")
         elif not guess.isalpha():
             st.error("Only letters allowed.")
         else:
             st.session_state.guesses.append(guess)
-            display_tiles_row(guess)  # show immediately
+            display_tiles_row(guess)  # Show immediately
 
             if guess == st.session_state.word:
                 st.success("🎉 Correct! You won!")

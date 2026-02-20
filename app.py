@@ -3,9 +3,9 @@ import random
 from datetime import datetime
 
 # ==============================
-# VERSION CONTROL - 2
+# VERSION CONTROL - 3
 # ==============================
-APP_VERSION = "Shiftword v3.2 - Tile Route Rules - Feb 20 2026"
+APP_VERSION = "Shiftword v3.3 - Tiles Fixed - Feb 20 2026"
 
 st.title("🧩 Shiftword Game")
 st.caption(APP_VERSION)
@@ -61,16 +61,15 @@ st.write("---")
 # ==============================
 # TILE DISPLAY FUNCTION
 # ==============================
-def display_tiles(word):
-    tiles_html = ""
+def display_tiles_row(word):
+    html = '<div style="display:flex; flex-direction:row;">'
     for letter in word:
-        tiles_html += f"""
+        html += f"""
         <div style="
-            display:inline-block;
             width:50px;
             height:50px;
             border:2px solid white;
-            margin:5px;
+            margin:3px;
             font-size:28px;
             font-weight:bold;
             text-align:center;
@@ -81,14 +80,15 @@ def display_tiles(word):
         {letter}
         </div>
         """
-    st.markdown(tiles_html, unsafe_allow_html=True)
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
 
 # ==============================
-# DISPLAY ALL PREVIOUS GUESSES
+# DISPLAY PREVIOUS GUESSES
 # ==============================
 st.subheader("Previous Guesses")
 for guess in st.session_state.guesses:
-    display_tiles(guess)
+    display_tiles_row(guess)
 
 # ==============================
 # GAME INPUT
@@ -105,9 +105,8 @@ if not st.session_state.game_over:
             st.error("Only letters allowed.")
         else:
             st.session_state.guesses.append(guess)
-            display_tiles(guess)  # show immediately
+            display_tiles_row(guess)  # show immediately
 
-            # Check if correct
             if guess == st.session_state.word:
                 st.success("🎉 Correct! You won!")
                 st.session_state.game_over = True

@@ -1,157 +1,112 @@
 import streamlit as st
+import random
+from datetime import datetime
 
-APP_VERSION = "v2.3 - Feb 20 2026"
+# ==============================
+# VERSION CONTROL
+# ==============================
+APP_VERSION = "Shiftword v3.0 - Tile Borders Edition - Feb 20 2026"
+
+st.title("🧩 Shiftword Game")
+st.caption(f"{APP_VERSION}")
+st.caption(f"Loaded at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.write("🚀 Game is loading...")
-st.caption(f"Version: {APP_VERSION}")
 
-import random
-import string
+# ==============================
+# WORD BANK (Theme Based)
+# ==============================
 
-BOARD_SIZE = 4
-MAX_ATTEMPTS = 5
+WORD_BANK = {
+    "Nature": ["RIVER", "STONE", "PLANT", "CLOUD", "OCEAN"],
+    "Animals": ["TIGER", "HORSE", "SNAKE", "ZEBRA", "EAGLE"],
+    "Space": ["EARTH", "COMET", "ORBIT", "ALIEN", "ROVER"]
+}
 
-WORDS = [
-    {"word": "STONE", "clue": {"length": 5, "starts_with": "S", "contains": "T", "category": "Nature"}},
-    {"word": "PLANET", "clue": {"length": 6, "starts_with": "P", "contains": "N", "category": "Space"}},
-    {"word": "TIGER", "clue": {"length": 5, "starts_with": "T", "contains": "G", "category": "Animals"}},
-]
+# ==============================
+# SESSION STATE INITIALIZATION
+# ==============================
 
-# ---------------------------
-# Initialize Session State
-# ---------------------------
-if "game_started" not in st.session_state:
-    st.session_state.game_started = False
+if "word" not in st.session_state:
+    theme = random.choice(list(WORD_BANK.keys()))
+    word = random.choice(WORD_BANK[theme])
 
-if "attempts" not in st.session_state:
-    st.session_state.attempts = 0
+    st.session_state.word = word
+    st.session_state.theme = theme
+    st.session_state.attempts = 5
+    st.session_state.game_over = False
 
-if "board" not in st.session_state:
-    st.session_state.board = []
+# ==============================
+# DISPLAY CLUES (ONLY TWO)
+# ==============================
 
-if "target_word" not in st.session_state:
-    st.session_state.target_word = ""
+st.subheader("🔎 Clues")
+st.write(f"📌 Theme: **{st.session_state.theme}**")
+st.write(f"🔤 Number of Letters: **{len(st.session_state.word)}**")
 
-if "clue" not in st.session_state:
-    st.session_state.clue = {}
+st.write("---")
 
-# ---------------------------
-# Board Generator
-# ---------------------------
-def generate_board(word):
-    board = [["" for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+# ==============================
+# TILE DISPLAY FUNCTION
+# ==============================
 
-    r = random.randint(0, BOARD_SIZE - 1)
-    c = random.randint(0, BOARD_SIZE - 1)
-    board[r][c] = word[0]
+def display_tiles(guess):
+    tiles_html = ""
+    for i in range(len(st.session_state.word)):
+        letter = guess[i] if i < len(guess) else ""
+        tiles_html += f"""
+        <div style="
+            display:inline-block;
+            width:50px;
+            height:50px;
+            border:2px solid white;
+            margin:5px;
+            font-size:28px;
+            font-weight:bold;
+            text-align:center;
+            line-height:50px;
+            background-color:#1f1f1f;
+            color:white;
+        ">
+        {letter}
+        </div>
+        """
+    st.markdown(tiles_html, unsafe_allow_html=True)
 
-    for letter in word[1:]:
-        neighbors = [(r+dr, c+dc) for dr,dc in [(1,0),(-1,0),(0,1),(0,-1)]
-                     if 0<=r+dr<BOARD_SIZE and 0<=c+dc<BOARD_SIZE and board[r+dr][c+dc]==""]
+# ==============================
+# GAME LOGIC
+# ==============================
 
-        if neighbors:
-            r,c = random.choice(neighbors)
-        else:
-            empty_cells = [(i,j) for i in range(BOARD_SIZE)
-                           for j in range(BOARD_SIZE)
-                           if board[i][j]==""] 
-            r,c = random.choice(empty_cells)
+if not st.session_state.game_over:
 
-        board[r][c] = letter
-
-    for i in range(BOARD_SIZE):
-        for j in range(BOARD_SIZE):
-            if board[i][j] == "":
-                board[i][j] = random.choice(string.ascii_uppercase)
-
-    return board
-
-# ---------------------------
-# DFS Check
-# ---------------------------
-def word_exists(board, word):
-    word = word.upper()
-    visited = [[False]*BOARD_SIZE for _ in range(BOARD_SIZE)]
-
-    def dfs(r,c,index):
-        if index == len(word):
-            return True
-        if r<0 or r>=BOARD_SIZE or c<0 or c>=BOARD_SIZE:
-            return False
-        if visited[r][c] or board[r][c] != word[index]:
-            return False
-
-        visited[r][c] = True
-
-        for dr,dc in [(1,0),(-1,0),(0,1),(0,-1)]:
-            if dfs(r+dr,c+dc,index+1):
-                return True
-
-        visited[r][c] = False
-        return False
-
-    for i in range(BOARD_SIZE):
-        for j in range(BOARD_SIZE):
-            if dfs(i,j,0):
-                return True
-
-    return False
-
-# ---------------------------
-# Start Game Button
-# ---------------------------
-st.title("🔎 Clueless Game")
-
-if st.button("Start New Game"):
-    level = random.choice(WORDS)
-    st.session_state.target_word = level["word"].upper()
-    st.session_state.clue = level["clue"]
-    st.session_state.board = generate_board(st.session_state.target_word)
-    st.session_state.attempts = 0
-    st.session_state.game_started = True
-
-# ---------------------------
-# Display Game
-# ---------------------------
-if st.session_state.game_started:
-
-    st.subheader("Board")
-
-    # Display grid nicely
-    for row in st.session_state.board:
-        st.markdown(" | ".join(row))
-
-    st.subheader("Clues")
-    st.write("Length:", st.session_state.clue["length"])
-    st.write("Starts with:", st.session_state.clue["starts_with"])
-    st.write("Contains letter:", st.session_state.clue["contains"])
-    st.write("Category:", st.session_state.clue["category"])
-
-    guess = st.text_input("Enter your guess:")
+    guess = st.text_input("Enter your guess:").upper()
 
     if st.button("Submit Guess"):
 
-        if st.session_state.attempts >= MAX_ATTEMPTS:
-            st.error("No attempts left!")
+        if len(guess) != len(st.session_state.word):
+            st.error("Word length does not match.")
+        elif not guess.isalpha():
+            st.error("Only letters allowed.")
         else:
-            st.session_state.attempts += 1
-            guess = guess.upper()
+            display_tiles(guess)
 
-            if len(guess) != st.session_state.clue["length"]:
-                st.warning("Wrong length.")
-            elif not guess.startswith(st.session_state.clue["starts_with"]):
-                st.warning("Wrong starting letter.")
-            elif st.session_state.clue["contains"] not in guess:
-                st.warning("Missing required letter.")
-            elif word_exists(st.session_state.board, guess):
-                st.success("🎉 Correct! You found the word!")
-                st.session_state.game_started = False
+            if guess == st.session_state.word:
+                st.success("🎉 Correct! You won!")
+                st.session_state.game_over = True
             else:
-                st.error("Word cannot be formed from board.")
+                st.session_state.attempts -= 1
+                st.warning(f"❌ Wrong! Attempts left: {st.session_state.attempts}")
 
-    st.write(f"Attempts: {st.session_state.attempts}/{MAX_ATTEMPTS}")
+                if st.session_state.attempts == 0:
+                    st.error(f"Game Over! The word was: {st.session_state.word}")
+                    st.session_state.game_over = True
 
-    if st.session_state.attempts >= MAX_ATTEMPTS:
-        st.error("💀 Game Over!")
-        st.write("Correct word was:", st.session_state.target_word)
-        st.session_state.game_started = False
+# ==============================
+# RESTART BUTTON
+# ==============================
+
+if st.session_state.game_over:
+    if st.button("🔄 Play Again"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()

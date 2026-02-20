@@ -2,17 +2,13 @@ import streamlit as st
 import random
 from datetime import datetime
 
-# ==============================
-# VERSION CONTROL - 5
-# ==============================
-APP_VERSION = "Shiftword v3.6 - Emoji Tiles - Feb 20 2026"
+# Version control
+APP_VERSION = "Shiftword v3.7 - Guaranteed Tiles - Feb 20 2026"
 st.title("🧩 Shiftword Game")
 st.caption(APP_VERSION)
 st.caption(f"Loaded at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-# ==============================
-# GAME RULES
-# ==============================
+# Game rules
 st.markdown("""
 ### 📜 How to Play
 1. Guess the hidden word.
@@ -20,65 +16,42 @@ st.markdown("""
 3. You only get:
    - The **Theme**
    - The **Number of Letters**
-4. **Letter tiles must be chosen following the route of adjacent tiles** (vertical and horizontal only, **not diagonal**).
+4. **Tiles must be followed adjacently** (vertical or horizontal only, no diagonal).
 5. Enter words with the correct length.
 """)
-
 st.write("---")
 
-# ==============================
-# WORD BANK
-# ==============================
+# Word bank
 WORD_BANK = {
     "Nature": ["RIVER", "STONE", "PLANT", "CLOUD", "OCEAN"],
     "Animals": ["TIGER", "HORSE", "SNAKE", "ZEBRA", "EAGLE"],
     "Space": ["EARTH", "COMET", "ORBIT", "ALIEN", "ROVER"]
 }
 
-# ==============================
-# SESSION STATE INIT
-# ==============================
+# Session state init
 if "initialized" not in st.session_state:
-    theme = random.choice(list(WORD_BANK.keys()))
-    word = random.choice(WORD_BANK[theme])
-    st.session_state.word = word
-    st.session_state.theme = theme
+    st.session_state.word = random.choice(random.choice(list(WORD_BANK.values())))
+    st.session_state.theme = random.choice(list(WORD_BANK.keys()))
     st.session_state.attempts = 5
     st.session_state.guesses = []
     st.session_state.game_over = False
     st.session_state.initialized = True
 
-# ==============================
-# CLUES
-# ==============================
+# Clues
 st.subheader("🔎 Clues")
 st.write(f"📌 Theme: **{st.session_state.theme}**")
 st.write(f"🔤 Number of Letters: **{len(st.session_state.word)}**")
 st.write("---")
 
-# ==============================
-# TILE DISPLAY USING EMOJIS
-# ==============================
-def display_tiles(word):
-    # Using square emoji for tile + letter
-    tile_str = ""
-    for letter in word:
-        tile_str += f"⬛ {letter} "
-    st.text(tile_str)
-
-# ==============================
-# DISPLAY PREVIOUS GUESSES
-# ==============================
+# Display all previous guesses (guaranteed to show)
 st.subheader("Previous Guesses")
 for guess in st.session_state.guesses:
-    display_tiles(guess)
+    # Display letters separated by spaces inside a single text line
+    st.text(" ".join([f"[{c}]" for c in guess]))
 
-# ==============================
-# GAME INPUT
-# ==============================
+# Input
 if not st.session_state.game_over:
-    guess = st.text_input("Enter your guess (use only adjacent tiles route)").upper()
-
+    guess = st.text_input("Enter your guess (letters only, follow tile adjacency)").upper()
     if st.button("Submit Guess"):
         if len(guess) != len(st.session_state.word):
             st.error("Word length does not match.")
@@ -86,8 +59,6 @@ if not st.session_state.game_over:
             st.error("Only letters allowed.")
         else:
             st.session_state.guesses.append(guess)
-            display_tiles(guess)  # show immediately
-
             if guess == st.session_state.word:
                 st.success("🎉 Correct! You won!")
                 st.session_state.game_over = True
@@ -98,9 +69,7 @@ if not st.session_state.game_over:
                     st.error(f"Game Over! The word was: {st.session_state.word}")
                     st.session_state.game_over = True
 
-# ==============================
-# RESTART BUTTON
-# ==============================
+# Restart button
 if st.session_state.game_over:
     if st.button("🔄 Play Again"):
         st.session_state.clear()

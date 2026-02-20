@@ -3,9 +3,9 @@ import random
 from datetime import datetime
 
 # ==============================
-# VERSION CONTROL
+# VERSION CONTROL - 5
 # ==============================
-APP_VERSION = "Shiftword v3.5 - Streamlit Native Tiles - Feb 20 2026"
+APP_VERSION = "Shiftword v3.6 - Emoji Tiles - Feb 20 2026"
 st.title("🧩 Shiftword Game")
 st.caption(APP_VERSION)
 st.caption(f"Loaded at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -57,13 +57,14 @@ st.write(f"🔤 Number of Letters: **{len(st.session_state.word)}**")
 st.write("---")
 
 # ==============================
-# TILE DISPLAY USING COLUMNS (Native Streamlit)
+# TILE DISPLAY USING EMOJIS
 # ==============================
 def display_tiles(word):
-    cols = st.columns(len(word))
-    for i, letter in enumerate(word):
-        with cols[i]:
-            st.text_input("", value=letter, key=f"tile_{letter}_{i}", disabled=True)
+    # Using square emoji for tile + letter
+    tile_str = ""
+    for letter in word:
+        tile_str += f"⬛ {letter} "
+    st.text(tile_str)
 
 # ==============================
 # DISPLAY PREVIOUS GUESSES
@@ -73,21 +74,19 @@ for guess in st.session_state.guesses:
     display_tiles(guess)
 
 # ==============================
-# GAME INPUT- 4
+# GAME INPUT
 # ==============================
 if not st.session_state.game_over:
     guess = st.text_input("Enter your guess (use only adjacent tiles route)").upper()
 
     if st.button("Submit Guess"):
-
         if len(guess) != len(st.session_state.word):
             st.error("Word length does not match.")
         elif not guess.isalpha():
             st.error("Only letters allowed.")
         else:
             st.session_state.guesses.append(guess)
-            # Display the tiles immediately
-            display_tiles(guess)
+            display_tiles(guess)  # show immediately
 
             if guess == st.session_state.word:
                 st.success("🎉 Correct! You won!")

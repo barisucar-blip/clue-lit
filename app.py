@@ -1,42 +1,17 @@
 import streamlit as st
 import random
-from datetime import datetime
+import pandas as pd
 
-# ==============================
-# Version
-# ==============================
-APP_VERSION = "Shiftword v4.2 - Visible Tiles Only - Feb 20 2026"
-st.title("🧩 Shiftword Game")
-st.caption(APP_VERSION)
-st.caption(f"Loaded at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.title("🧩 Shiftword Game - Tiles Visible")
 
-# ==============================
-# Game rules
-# ==============================
-st.markdown("""
-### 📜 How to Play
-1. Guess the hidden word by typing it.
-2. You have **5 attempts**.
-3. You only get:
-   - The **Theme**
-   - The **Number of Letters**
-4. Letter tiles are displayed for your previous guesses.
-5. Enter words with the correct length.
-""")
-st.write("---")
-
-# ==============================
 # Word bank
-# ==============================
 WORD_BANK = {
     "Nature": ["RIVER", "STONE", "PLANT", "CLOUD", "OCEAN"],
     "Animals": ["TIGER", "HORSE", "SNAKE", "ZEBRA", "EAGLE"],
     "Space": ["EARTH", "COMET", "ORBIT", "ALIEN", "ROVER"]
 }
 
-# ==============================
-# Session state init
-# ==============================
+# Session state initialization
 if "initialized" not in st.session_state:
     st.session_state.theme = random.choice(list(WORD_BANK.keys()))
     st.session_state.word = random.choice(WORD_BANK[st.session_state.theme])
@@ -45,39 +20,36 @@ if "initialized" not in st.session_state:
     st.session_state.game_over = False
     st.session_state.initialized = True
 
-# ==============================
 # Clues
-# ==============================
 st.subheader("🔎 Clues")
 st.write(f"📌 Theme: **{st.session_state.theme}**")
-st.write(f"🔤 Number of Letters: **{len(st.session_state.word)}**")
+st.write(f"🔤 Number of letters: **{len(st.session_state.word)}**")
 st.write(f"Attempts left: {st.session_state.attempts}")
 st.write("---")
 
-# ==============================
-# Display previous guesses as tiles
-# ==============================
+# Display previous guesses as a table (tiles)
 st.subheader("Previous Guesses")
-for guess in st.session_state.guesses:
-    # Use box brackets to simulate tiles
-    st.text(" ".join([f"[{c}]" for c in guess]))
+if st.session_state.guesses:
+    # Create a list of rows for the table
+    table_data = []
+    for guess in st.session_state.guesses:
+        table_data.append(list(guess))  # each letter is a cell
+    st.table(pd.DataFrame(table_data))
+else:
+    st.write("No guesses yet")
 
-# ==============================
-# Input for guessing
-# ==============================
+# Input
 if not st.session_state.game_over:
-    guess = st.text_input("Enter your guess (typed)").upper()
-    
+    guess = st.text_input("Enter your guess").upper()
     if st.button("Submit Guess"):
         if len(guess) != len(st.session_state.word):
             st.error("Word length does not match!")
         elif not guess.isalpha():
             st.error("Only letters allowed!")
         else:
-            # Save guess
+            # Add guess
             st.session_state.guesses.append(guess)
-            
-            # Check result
+            # Check win
             if guess == st.session_state.word:
                 st.success("🎉 Correct! You won!")
                 st.session_state.game_over = True
@@ -88,9 +60,7 @@ if not st.session_state.game_over:
                     st.error(f"Game Over! The word was: {st.session_state.word}")
                     st.session_state.game_over = True
 
-# ==============================
-# Restart button
-# ==============================
+# Restart
 if st.session_state.game_over:
     if st.button("🔄 Play Again"):
         st.session_state.clear()

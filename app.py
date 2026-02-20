@@ -3,7 +3,7 @@ import random
 from datetime import datetime
 
 # ==============================
-# VERSION CONTROL
+# VERSION CONTROL - 1 
 # ==============================
 APP_VERSION = "Shiftword v3.1 - Persistent Tiles - Feb 20 2026"
 

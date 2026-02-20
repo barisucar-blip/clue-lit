@@ -5,16 +5,29 @@ from datetime import datetime
 # ==============================
 # VERSION CONTROL
 # ==============================
-APP_VERSION = "Shiftword v3.0 - Tile Borders Edition - Feb 20 2026"
+APP_VERSION = "Shiftword v3.1 - Persistent Tiles - Feb 20 2026"
 
 st.title("🧩 Shiftword Game")
-st.caption(f"{APP_VERSION}")
+st.caption(APP_VERSION)
 st.caption(f"Loaded at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-st.write("🚀 Game is loading...")
+# ==============================
+# INSTRUCTIONS
+# ==============================
+st.markdown("""
+### 📜 How to Play
+- Guess the hidden word.
+- You have **5 attempts**.
+- You only get:
+  - The **Theme**
+  - The **Number of Letters**
+- Enter a word with correct length.
+""")
+
+st.write("---")
 
 # ==============================
-# WORD BANK (Theme Based)
+# WORD BANK
 # ==============================
 
 WORD_BANK = {
@@ -24,20 +37,22 @@ WORD_BANK = {
 }
 
 # ==============================
-# SESSION STATE INITIALIZATION
+# SESSION INIT
 # ==============================
 
-if "word" not in st.session_state:
+if "initialized" not in st.session_state:
     theme = random.choice(list(WORD_BANK.keys()))
     word = random.choice(WORD_BANK[theme])
 
     st.session_state.word = word
     st.session_state.theme = theme
     st.session_state.attempts = 5
+    st.session_state.guesses = []
     st.session_state.game_over = False
+    st.session_state.initialized = True
 
 # ==============================
-# DISPLAY CLUES (ONLY TWO)
+# CLUES (ONLY TWO)
 # ==============================
 
 st.subheader("🔎 Clues")
@@ -47,13 +62,12 @@ st.write(f"🔤 Number of Letters: **{len(st.session_state.word)}**")
 st.write("---")
 
 # ==============================
-# TILE DISPLAY FUNCTION
+# TILE DISPLAY
 # ==============================
 
 def display_tiles(guess):
     tiles_html = ""
-    for i in range(len(st.session_state.word)):
-        letter = guess[i] if i < len(guess) else ""
+    for letter in guess:
         tiles_html += f"""
         <div style="
             display:inline-block;
@@ -74,12 +88,19 @@ def display_tiles(guess):
     st.markdown(tiles_html, unsafe_allow_html=True)
 
 # ==============================
-# GAME LOGIC
+# DISPLAY PREVIOUS GUESSES
+# ==============================
+
+for guess in st.session_state.guesses:
+    display_tiles(guess)
+
+# ==============================
+# GAME INPUT
 # ==============================
 
 if not st.session_state.game_over:
 
-    guess = st.text_input("Enter your guess:").upper()
+    guess = st.text_input("Enter your guess").upper()
 
     if st.button("Submit Guess"):
 
@@ -88,7 +109,7 @@ if not st.session_state.game_over:
         elif not guess.isalpha():
             st.error("Only letters allowed.")
         else:
-            display_tiles(guess)
+            st.session_state.guesses.append(guess)
 
             if guess == st.session_state.word:
                 st.success("🎉 Correct! You won!")
@@ -102,11 +123,10 @@ if not st.session_state.game_over:
                     st.session_state.game_over = True
 
 # ==============================
-# RESTART BUTTON
+# RESTART
 # ==============================
 
 if st.session_state.game_over:
     if st.button("🔄 Play Again"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
+        st.session_state.clear()
         st.rerun()

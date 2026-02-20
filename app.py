@@ -1,4 +1,10 @@
 import streamlit as st
+
+APP_VERSION = "v2.3 - Feb 20 2026"
+
+st.write("🚀 Game is loading...")
+st.caption(f"Version: {APP_VERSION}")
+
 import random
 import string
 

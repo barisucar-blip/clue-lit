@@ -14,6 +14,9 @@ KEY_BOARD = "board"
 KEY_TARGET_WORD = "target_word"
 KEY_CLUE = "clue"
 KEY_HISTORY = "history"
+KEY_GAME_OVER = "game_over"
+KEY_PLAY_AGAIN = "play_again_prompt"
+KEY_GUESS_KEY = "guess_key"  # used to reset text input
 
 WORDS = [
     {"word": "STONE", "clue": {"length": 5, "starts_with": "S", "contains": "T", "category": "Nature"}},
@@ -31,9 +34,13 @@ for key, default in [
     (KEY_TARGET_WORD, ""),
     (KEY_CLUE, {}),
     (KEY_HISTORY, []),
+    (KEY_GAME_OVER, False),
+    (KEY_PLAY_AGAIN, False),
+    (KEY_GUESS_KEY, 0),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
 
 # ---------------------------
 # Board Generator
@@ -88,7 +95,6 @@ def word_exists(board: list[list[str]], word: str) -> bool:
     """
     Returns True if `word` can be traced on `board` by moving to
     adjacent (up/down/left/right) cells without reusing any cell.
-    Derives board dimensions from the board itself for flexibility.
     """
     rows = len(board)
     cols = len(board[0]) if rows > 0 else 0
@@ -126,46 +132,71 @@ def sanitize_guess(raw: str) -> str:
 
 
 # ---------------------------
-# UI
+# Start a New Game (helper)
 # ---------------------------
-st.title("🔎 Clueless Game")
-
-if st.button("Start New Game"):
+def start_new_game():
     level = random.choice(WORDS)
     st.session_state[KEY_TARGET_WORD] = level["word"].upper()
     st.session_state[KEY_CLUE] = level["clue"]
     st.session_state[KEY_BOARD] = generate_board(st.session_state[KEY_TARGET_WORD])
     st.session_state[KEY_ATTEMPTS] = 0
     st.session_state[KEY_GAME_STARTED] = True
+    st.session_state[KEY_GAME_OVER] = False
+    st.session_state[KEY_PLAY_AGAIN] = False
+    st.session_state[KEY_GUESS_KEY] += 1  # resets the text input
+
+
+# ---------------------------
+# UI — Title
+# ---------------------------
+st.title("Project Clue")
+
+if st.button("Start New Game"):
+    start_new_game()
 
 # ---------------------------
 # Display Game
 # ---------------------------
 if st.session_state[KEY_GAME_STARTED]:
 
+    # --- Game Rules ---
+    st.info(
+        "**How to play:**  \n"
+        "1. Look at the letter board below.  \n"
+        "2. Use the clues to guess the hidden word.  \n"
+        "3. Your word must be traceable on the board by moving to adjacent cells "
+        "(up, down, left, right) — no reusing the same cell.  \n"
+        f"4. You have **{MAX_ATTEMPTS} attempts**. Good luck!"
+    )
+
+    # --- Board ---
     st.subheader("Board")
-    cols = st.columns(BOARD_SIZE)
+    col_widgets = st.columns(BOARD_SIZE)
     for row in st.session_state[KEY_BOARD]:
-        for col_widget, letter in zip(cols, row):
+        for col_widget, letter in zip(col_widgets, row):
             col_widget.markdown(
                 f"<div style='text-align:center; font-size:24px; font-weight:bold; "
                 f"padding:10px; border:1px solid #ccc; border-radius:6px;'>{letter}</div>",
                 unsafe_allow_html=True,
             )
 
+    # --- Clues (Length and Category only — Starts With and Contains removed) ---
     st.subheader("Clues")
     clue = st.session_state[KEY_CLUE]
     st.write("Length:", clue["length"])
-    st.write("Starts with:", clue["starts_with"])
-    st.write("Contains letter:", clue["contains"])
     st.write("Category:", clue["category"])
 
     st.write(f"**Attempts:** {st.session_state[KEY_ATTEMPTS]}/{MAX_ATTEMPTS}")
 
-    guess_input = st.text_input("Enter your guess:")
+    # --- Guess Input ---
+    # The key changes after each valid submission, which forces Streamlit
+    # to remount the widget and clear it — no "Upgrade" prompt triggered.
+    guess_input = st.text_input(
+        "Enter your guess:",
+        key=f"guess_input_{st.session_state[KEY_GUESS_KEY]}"
+    )
 
     if st.button("Submit Guess"):
-        # Block submission if out of attempts
         if st.session_state[KEY_ATTEMPTS] >= MAX_ATTEMPTS:
             st.error("No attempts left! Start a new game.")
         else:
@@ -176,30 +207,53 @@ if st.session_state[KEY_GAME_STARTED]:
                 st.warning("Please enter a word.")
             elif len(guess) != clue["length"]:
                 st.warning(f"Wrong length — expected {clue['length']} letters.")
-            elif not guess.startswith(clue["starts_with"]):
-                st.warning(f"Word must start with '{clue['starts_with']}'.")
-            elif clue["contains"] not in guess:
-                st.warning(f"Word must contain the letter '{clue['contains']}'.")
             else:
-                # Only increment attempts for a properly formatted guess
+                # Increment attempt and clear the input box
                 st.session_state[KEY_ATTEMPTS] += 1
+                st.session_state[KEY_GUESS_KEY] += 1  # clears input on next render
 
                 target = st.session_state[KEY_TARGET_WORD]
 
                 if guess == target and word_exists(st.session_state[KEY_BOARD], guess):
                     st.success("🎉 Correct! You found the word!")
-                    st.session_state[KEY_HISTORY].append({"word": target, "result": "win", "attempts": st.session_state[KEY_ATTEMPTS]})
+                    st.session_state[KEY_HISTORY].append({
+                        "word": target, "result": "win",
+                        "attempts": st.session_state[KEY_ATTEMPTS]
+                    })
                     st.session_state[KEY_GAME_STARTED] = False
+                    st.session_state[KEY_PLAY_AGAIN] = True
+
                 elif word_exists(st.session_state[KEY_BOARD], guess):
                     st.error("That word exists on the board but isn't the answer. Try again!")
+
                 else:
                     st.error("Word cannot be formed from the board.")
 
-                # Check game over after incrementing
+                # Game over — out of attempts
                 if st.session_state[KEY_ATTEMPTS] >= MAX_ATTEMPTS and st.session_state[KEY_GAME_STARTED]:
                     st.error(f"💀 Game Over! The word was: **{target}**")
-                    st.session_state[KEY_HISTORY].append({"word": target, "result": "loss", "attempts": st.session_state[KEY_ATTEMPTS]})
+                    st.session_state[KEY_HISTORY].append({
+                        "word": target, "result": "loss",
+                        "attempts": st.session_state[KEY_ATTEMPTS]
+                    })
                     st.session_state[KEY_GAME_STARTED] = False
+                    st.session_state[KEY_PLAY_AGAIN] = True
+
+# ---------------------------
+# Play Again Prompt
+# ---------------------------
+if st.session_state[KEY_PLAY_AGAIN]:
+    st.divider()
+    st.subheader("Would you like to play again?")
+    col_yes, col_no = st.columns(2)
+    with col_yes:
+        if st.button("✅ Yes, play again!"):
+            start_new_game()
+            st.rerun()
+    with col_no:
+        if st.button("❌ No, I'm done"):
+            st.session_state[KEY_PLAY_AGAIN] = False
+            st.success("Thanks for playing Project Clue! 👋")
 
 # ---------------------------
 # History / Score Tracker

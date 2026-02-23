@@ -248,45 +248,52 @@ st.markdown("""
   .word-display { text-align:center; font-size:clamp(20px,6vw,26px); font-weight:800;
                   letter-spacing:8px; min-height:38px; margin-bottom:6px; }
 
-  /* Tile button overrides — normal cell */
-  div[data-testid="stButton"] > button {
-    width:100% !important;
-    aspect-ratio:1 !important;
-    font-size:clamp(18px,6vw,26px) !important;
-    font-weight:800 !important;
-    border-radius:10px !important;
-    border:2px solid #ddd !important;
-    background:#f9f9f9 !important;
-    color:#222 !important;
-    padding:0 !important;
-    transition:background 0.12s, border-color 0.12s, transform 0.1s !important;
-    line-height:1 !important;
+  /* Board wrapper — constrains total grid width */
+  .board-wrapper {
+    max-width: 240px;
+    margin: 0 auto 6px auto;
   }
-  div[data-testid="stButton"] > button:hover {
-    border-color:#999 !important;
-    transform:scale(1.05) !important;
+
+  /* Tile button overrides — normal cell */
+  .board-wrapper div[data-testid="stButton"] > button {
+    width: 100% !important;
+    height: 52px !important;
+    font-size: 20px !important;
+    font-weight: 800 !important;
+    border-radius: 8px !important;
+    border: 2px solid #ddd !important;
+    background: #f9f9f9 !important;
+    color: #222 !important;
+    padding: 0 !important;
+    transition: background 0.12s, border-color 0.12s, transform 0.1s !important;
+    line-height: 1 !important;
+  }
+  .board-wrapper div[data-testid="stButton"] > button:hover {
+    border-color: #999 !important;
+    transform: scale(1.05) !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.10) !important;
   }
 
   /* Selected tile */
-  div[data-testid="stButton"].tile-selected > button {
-    background:#4f86f7 !important;
-    border-color:#1a56db !important;
-    color:white !important;
+  .board-wrapper div[data-testid="stButton"].tile-selected > button {
+    background: #4f86f7 !important;
+    border-color: #1a56db !important;
+    color: white !important;
   }
 
   /* Tip tile (last selected) */
-  div[data-testid="stButton"].tile-tip > button {
-    background:#1a56db !important;
-    border-color:#0d3b9e !important;
-    color:white !important;
-    transform:scale(1.09) !important;
+  .board-wrapper div[data-testid="stButton"].tile-tip > button {
+    background: #1a56db !important;
+    border-color: #0d3b9e !important;
+    color: white !important;
+    transform: scale(1.09) !important;
   }
 
   /* Blocked tile */
-  div[data-testid="stButton"].tile-blocked > button {
-    opacity:0.3 !important;
-    cursor:not-allowed !important;
-    pointer-events:none !important;
+  .board-wrapper div[data-testid="stButton"].tile-blocked > button {
+    opacity: 0.3 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
   }
 </style>
 """, unsafe_allow_html=True)
@@ -390,6 +397,7 @@ elif st.session_state[KEY_STAGE] == "game":
     # ── Tile board using st.columns + st.button ──
     # Each cell is a native Streamlit button — no iframe, no bridge needed.
     # We inject a JS snippet AFTER rendering to add CSS classes to selected/tip/blocked buttons.
+    st.markdown('<div class="board-wrapper">', unsafe_allow_html=True)
     for row_idx in range(BOARD_SIZE):
         cols = st.columns(BOARD_SIZE)
         for col_idx in range(BOARD_SIZE):
@@ -416,6 +424,8 @@ elif st.session_state[KEY_STAGE] == "game":
                 handle_tile_click(row_idx, col_idx)
                 st.rerun()
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # ── CSS class injection via JS to style selected/tip/blocked tiles ──
     # We mark each button by its position so JS can find and style it.
     sel_indices = [(r * BOARD_SIZE + c) for r, c in sel]
@@ -439,19 +449,14 @@ elif st.session_state[KEY_STAGE] == "game":
       // Give Streamlit a moment to render the buttons
       setTimeout(() => {{
         const btns = window.parent.document.querySelectorAll(
-          'section.main div[data-testid="stButton"] button'
+          '.board-wrapper div[data-testid="stButton"] button'
         );
         const sel     = {sel_indices};
         const tip     = {tip_index};
         const blocked = {blocked_indices};
         const size    = {BOARD_SIZE};
 
-        // The tile buttons are the first BOARD_SIZE*BOARD_SIZE buttons in game stage.
-        // Collect only those whose text is a single uppercase letter.
-        let tileBtns = [];
-        btns.forEach(b => {{
-          if (/^[A-Z]$/.test(b.textContent.trim())) tileBtns.push(b);
-        }});
+        let tileBtns = Array.from(btns);
 
         tileBtns.forEach((btn, i) => {{
           const parent = btn.parentElement;

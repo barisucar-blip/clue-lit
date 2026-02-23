@@ -1,6 +1,7 @@
 import streamlit as st
 import random
 import string
+import requests
 
 # ---------------------------
 # Constants
@@ -23,6 +24,8 @@ KEY_TOTAL_SCORE  = "total_score"
 KEY_FEEDBACK     = "feedback"
 KEY_WORDS_PLAYED = "words_played"
 KEY_SELECTED     = "selected"    # list of (row, col) in selection order
+KEY_BONUS_WORDS  = "bonus_words"  # set of bonus words found this round
+KEY_DICT_CACHE   = "dict_cache"   # {word: True/False} to avoid repeat API calls
 
 WORDS = [
     {"word": "STONE",  "clue": {"length": 5, "category": "Nature"}},
@@ -49,6 +52,8 @@ for key, default in [
     (KEY_FEEDBACK,     None),
     (KEY_WORDS_PLAYED, 0),
     (KEY_SELECTED,     []),
+    (KEY_BONUS_WORDS,  set()),
+    (KEY_DICT_CACHE,   {}),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -140,6 +145,7 @@ def go_home():
     st.session_state[KEY_LAST_MSG] = None
     st.session_state[KEY_FEEDBACK] = None
     st.session_state[KEY_SELECTED] = []
+    st.session_state[KEY_BONUS_WORDS] = set()
 
 
 def start_new_game():
@@ -155,6 +161,7 @@ def start_new_game():
     st.session_state[KEY_LAST_MSG]    = None
     st.session_state[KEY_FEEDBACK]    = None
     st.session_state[KEY_SELECTED]    = []
+    st.session_state[KEY_BONUS_WORDS]  = set()
     st.session_state[KEY_STAGE]       = "game"
 
 
@@ -167,10 +174,31 @@ def go_result(msg_type, msg_text, history_entry):
     st.session_state[KEY_STAGE]        = "result"
 
 
+def is_real_word(word: str) -> bool:
+    """Check if word exists in English dictionary via free API. Cached per session."""
+    word = word.lower()
+    cache = st.session_state[KEY_DICT_CACHE]
+    if word in cache:
+        return cache[word]
+    try:
+        resp = requests.get(
+            f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
+            timeout=3
+        )
+        result = resp.status_code == 200
+    except Exception:
+        # If API unreachable, fail open (treat as real word) so game isn't broken
+        result = True
+    cache[word] = result
+    st.session_state[KEY_DICT_CACHE] = cache
+    return result
+
+
 def evaluate_guess(raw_guess):
-    clue     = st.session_state[KEY_CLUE]
-    target   = st.session_state[KEY_TARGET_WORD]
-    attempts = st.session_state[KEY_ATTEMPTS]
+    clue        = st.session_state[KEY_CLUE]
+    target      = st.session_state[KEY_TARGET_WORD]
+    attempts    = st.session_state[KEY_ATTEMPTS]
+    bonus_words = st.session_state[KEY_BONUS_WORDS]
 
     if attempts >= MAX_ATTEMPTS:
         st.session_state[KEY_FEEDBACK] = ("error", "No attempts left!")
@@ -184,23 +212,56 @@ def evaluate_guess(raw_guess):
         st.session_state[KEY_FEEDBACK] = ("warning", f"Need {clue['length']} letters, got {len(guess)}.")
         return
 
-    st.session_state[KEY_ATTEMPTS]  += 1
-    st.session_state[KEY_GUESS_KEY] += 1
-    st.session_state[KEY_SELECTED]   = []
-    attempt_number = st.session_state[KEY_ATTEMPTS]
+    # Always clear the tile selection
+    st.session_state[KEY_SELECTED] = []
 
-    if guess == target and word_exists(st.session_state[KEY_BOARD], guess):
+    board = st.session_state[KEY_BOARD]
+
+    # ── Case 1: correct target word ──
+    if guess == target and word_exists(board, guess):
+        st.session_state[KEY_ATTEMPTS]  += 1
+        st.session_state[KEY_GUESS_KEY] += 1
+        attempt_number = st.session_state[KEY_ATTEMPTS]
         pts = SCORE_MAP.get(attempt_number, 0)
         st.session_state[KEY_TOTAL_SCORE] += pts
         go_result("win",
             f"🎉 Correct! You found **{target}** on attempt {attempt_number} — **+{pts} points!**",
-            {"word": target, "result": "win", "attempts": attempt_number, "points": pts})
-    elif attempt_number >= MAX_ATTEMPTS:
+            {"word": target, "result": "win", "attempts": attempt_number, "points": pts,
+             "bonus_words": len(st.session_state[KEY_BONUS_WORDS])})
+        return
+
+    # ── Case 2: already found this bonus word ──
+    if guess in bonus_words:
+        st.session_state[KEY_FEEDBACK] = ("warning", f"You already found **{guess}** as a bonus word!")
+        st.session_state[KEY_GUESS_KEY] += 1
+        return
+
+    # ── Case 3: traceable on board + real English word → bonus! ──
+    if word_exists(board, guess) and is_real_word(guess):
+        bonus_pts = 1
+        st.session_state[KEY_TOTAL_SCORE] += bonus_pts
+        bonus_words.add(guess)
+        st.session_state[KEY_BONUS_WORDS]  = bonus_words
+        st.session_state[KEY_GUESS_KEY]   += 1
+        st.session_state[KEY_FEEDBACK] = (
+            "bonus",
+            f"🌟 Bonus word! **{guess}** is a real word on the board — **+{bonus_pts} pt!** "
+            f"Keep going to find the target word."
+        )
+        return
+
+    # ── Case 4: wrong — consume an attempt ──
+    st.session_state[KEY_ATTEMPTS]  += 1
+    st.session_state[KEY_GUESS_KEY] += 1
+    attempt_number = st.session_state[KEY_ATTEMPTS]
+
+    if attempt_number >= MAX_ATTEMPTS:
         go_result("loss",
             f"💀 Out of attempts! The word was **{target}**.",
-            {"word": target, "result": "loss", "attempts": attempt_number, "points": 0})
-    elif word_exists(st.session_state[KEY_BOARD], guess):
-        st.session_state[KEY_FEEDBACK] = ("error", "That word is on the board but isn't the answer!")
+            {"word": target, "result": "loss", "attempts": attempt_number, "points": 0,
+             "bonus_words": len(st.session_state[KEY_BONUS_WORDS])})
+    elif word_exists(board, guess):
+        st.session_state[KEY_FEEDBACK] = ("error", "That word is traceable but isn't a real English word or isn't the target!")
     else:
         st.session_state[KEY_FEEDBACK] = ("error", "Word can't be traced on the board. Try again!")
 
@@ -257,7 +318,7 @@ st.markdown("""
   /* Tile button overrides — normal cell */
   .board-wrapper div[data-testid="stButton"] > button {
     width: 100% !important;
-    height: 52px !important;
+    aspect-ratio: 1 / 1 !important;
     font-size: 20px !important;
     font-weight: 800 !important;
     border-radius: 8px !important;
@@ -267,6 +328,7 @@ st.markdown("""
     padding: 0 !important;
     transition: background 0.12s, border-color 0.12s, transform 0.1s !important;
     line-height: 1 !important;
+    min-height: unset !important;
   }
   .board-wrapper div[data-testid="stButton"] > button:hover {
     border-color: #999 !important;
@@ -378,8 +440,19 @@ elif st.session_state[KEY_STAGE] == "game":
     # Feedback
     fb = st.session_state[KEY_FEEDBACK]
     if fb:
-        if fb[0] == "warning": st.warning(fb[1])
-        else: st.error(fb[1])
+        if fb[0] == "warning":   st.warning(fb[1])
+        elif fb[0] == "bonus":   st.success(fb[1])
+        else:                    st.error(fb[1])
+
+    # Show bonus words found this round
+    bonus_words = st.session_state[KEY_BONUS_WORDS]
+    if bonus_words:
+        bw_list = "  ·  ".join(sorted(bonus_words))
+        st.markdown(
+            f'<div style="text-align:center;font-size:13px;color:#7c3aed;margin-bottom:0.3rem;">'
+            f'🌟 Bonus words found: <b>{bw_list}</b></div>',
+            unsafe_allow_html=True
+        )
 
     # ── Word being built display ──
     if sel:
@@ -537,9 +610,11 @@ elif st.session_state[KEY_STAGE] == "result":
         icon      = "✅" if h["result"] == "win" else "❌"
         pts       = h.get("points", 0)
         pts_label = f" · **+{pts} pts**" if pts > 0 else " · *0 pts*"
+        bw = h.get("bonus_words", 0)
+        bw_label = f" · 🌟 {bw} bonus" if bw else ""
         st.markdown(
             f'<div class="history-row">{icon} Word {total-i+1}: '
-            f'<code>{h["word"]}</code> — attempt {h["attempts"]}{pts_label}</div>',
+            f'<code>{h["word"]}</code> — attempt {h["attempts"]}{pts_label}{bw_label}</div>',
             unsafe_allow_html=True
         )
 

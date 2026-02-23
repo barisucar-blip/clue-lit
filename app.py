@@ -23,6 +23,7 @@ KEY_USED_WORDS   = "used_words"
 KEY_TOTAL_SCORE  = "total_score"
 KEY_FEEDBACK     = "feedback"
 KEY_WORDS_PLAYED = "words_played"
+KEY_TILE_WORD    = "tile_word"   # word submitted from tile, read on next rerun
 
 WORDS = [
     {"word": "STONE",  "clue": {"length": 5, "category": "Nature"}},
@@ -48,6 +49,7 @@ for key, default in [
     (KEY_TOTAL_SCORE,  0),
     (KEY_FEEDBACK,     None),
     (KEY_WORDS_PLAYED, 0),
+    (KEY_TILE_WORD,    None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -126,10 +128,10 @@ def pick_unused_word():
 # Stage Transitions
 # ---------------------------
 def go_home():
-    st.session_state[KEY_STAGE]    = "home"
-    st.session_state[KEY_LAST_MSG] = None
-    st.session_state[KEY_FEEDBACK] = None
-    st.query_params.clear()
+    st.session_state[KEY_STAGE]     = "home"
+    st.session_state[KEY_LAST_MSG]  = None
+    st.session_state[KEY_FEEDBACK]  = None
+    st.session_state[KEY_TILE_WORD] = None
 
 
 def start_new_game():
@@ -144,8 +146,8 @@ def start_new_game():
     st.session_state[KEY_GUESS_KEY]   += 1
     st.session_state[KEY_LAST_MSG]     = None
     st.session_state[KEY_FEEDBACK]     = None
+    st.session_state[KEY_TILE_WORD]    = None
     st.session_state[KEY_STAGE]        = "game"
-    st.query_params.clear()
 
 
 def go_result(msg_type, msg_text, history_entry):
@@ -153,8 +155,8 @@ def go_result(msg_type, msg_text, history_entry):
     st.session_state[KEY_LAST_MSG]     = (msg_type, msg_text)
     st.session_state[KEY_FEEDBACK]     = None
     st.session_state[KEY_WORDS_PLAYED] += 1
+    st.session_state[KEY_TILE_WORD]    = None
     st.session_state[KEY_STAGE]        = "result"
-    st.query_params.clear()
 
 
 def evaluate_guess(raw_guess):
@@ -195,15 +197,13 @@ def evaluate_guess(raw_guess):
 
 
 # ---------------------------
-# Check for tile-submitted word via query params
-# JS writes ?tile_guess=WORD to the URL → Streamlit reads it here and evaluates
+# Process tile word submitted from hidden form (runs before rendering)
 # ---------------------------
-if st.session_state[KEY_STAGE] == "game":
-    tile_guess = st.query_params.get("tile_guess", None)
-    if tile_guess:
-        st.query_params.clear()
-        evaluate_guess(tile_guess)
-        st.rerun()
+tile_word = st.session_state.get(KEY_TILE_WORD)
+if tile_word and st.session_state[KEY_STAGE] == "game":
+    st.session_state[KEY_TILE_WORD] = None
+    evaluate_guess(tile_word)
+    st.rerun()
 
 
 # ---------------------------
@@ -211,14 +211,14 @@ if st.session_state[KEY_STAGE] == "game":
 # ---------------------------
 st.markdown("""
 <style>
-  .big-title { font-size: clamp(28px,8vw,48px); font-weight:800; text-align:center; margin-bottom:0.2em; }
-  .subtitle  { text-align:center; color:#666; margin-bottom:1.5em; font-size:clamp(14px,4vw,18px); }
+  .big-title { font-size:clamp(28px,8vw,48px); font-weight:800; text-align:center; margin-bottom:0.2em; }
   .clue-box  { background:#f0f4ff; border-radius:10px; padding:12px 18px; margin-bottom:0.6rem; font-size:clamp(14px,4vw,16px); }
   .bonus-clue-box { background:#fffbe6; border:1px solid #f6d860; border-radius:10px; padding:10px 16px; margin-bottom:0.6rem; font-size:clamp(13px,3.8vw,15px); }
   .attempt-bar { text-align:center; font-size:15px; color:#444; margin-bottom:0.8rem; }
   .total-score { font-size:clamp(20px,6vw,28px); font-weight:800; text-align:center; color:#4CAF50; margin:0.5rem 0 1rem 0; }
   .history-row { font-size:clamp(13px,3.5vw,15px); padding:4px 0; }
-  .subscribe-wall { text-align:center; padding:2rem 1rem; }
+  /* Hide the tile-submit form visually but keep it functional */
+  div[data-testid="stForm"].tile-form { display:none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -229,13 +229,13 @@ st.markdown("""
 if st.session_state[KEY_STAGE] == "home":
 
     st.markdown('<div class="big-title">Project Clue</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">A word tracing puzzle game</div>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align:center;color:#666;margin-bottom:1.5em;font-size:clamp(14px,4vw,18px);">A word tracing puzzle game</div>', unsafe_allow_html=True)
 
     st.markdown("### How to play")
     st.markdown(
-        f"1. A **4×4 grid** of letters appears — **click letters** on the board to build your word.\n"
+        f"1. A **4×4 grid** of letters appears — **tap letters** on the board to build your word.\n"
         f"2. Each letter must be **adjacent** to the previous one (up/down/left/right). No reusing cells.\n"
-        f"3. **Click a selected letter again** to deselect it and step back.\n"
+        f"3. **Tap the last selected letter again** to deselect it and step back.\n"
         f"4. The word **auto-submits** when you reach the correct letter count.\n"
         f"5. You have **{MAX_ATTEMPTS} attempts** per word.\n"
         f"6. **Bonus clues appear automatically after each wrong guess:**\n"
@@ -276,7 +276,7 @@ elif st.session_state[KEY_STAGE] == "game":
         unsafe_allow_html=True
     )
 
-    # Clues (above board so visible before scrolling on mobile)
+    # Clues
     st.markdown(
         f'<div class="clue-box">🔤 <b>Length:</b> {clue["length"]} &nbsp;|&nbsp; 📂 <b>Category:</b> {clue["category"]}</div>',
         unsafe_allow_html=True
@@ -303,224 +303,222 @@ elif st.session_state[KEY_STAGE] == "game":
         if fb[0] == "warning": st.warning(fb[1])
         else: st.error(fb[1])
 
-    # ── Interactive board ──
-    # Flatten board letters for JS
-    flat  = [board[r][c] for r in range(BOARD_SIZE) for c in range(BOARD_SIZE)]
-    clu_len = clue["length"]
+    # ── Hidden form — JS will fill & submit this to pass the word back to Streamlit ──
+    # It's rendered invisibly; the tile component triggers it via JS.
+    with st.form(key=f"tile_form_{st.session_state[KEY_GUESS_KEY]}"):
+        hidden_input = st.text_input("tile_word_input", value="", key=f"tile_input_{st.session_state[KEY_GUESS_KEY]}", label_visibility="collapsed")
+        submitted    = st.form_submit_button("submit_tile", use_container_width=False)
 
-    # We get the current page URL via JS so we can append ?tile_guess=WORD
-    # and trigger a Streamlit rerun automatically.
+    if submitted and hidden_input:
+        st.session_state[KEY_TILE_WORD] = hidden_input
+        st.rerun()
+
+    # ── Interactive board ──
+    flat    = [board[r][c] for r in range(BOARD_SIZE) for c in range(BOARD_SIZE)]
+    clu_len = clue["length"]
+    # unique DOM IDs tied to guess_key so they always match the current form
+    gk      = st.session_state[KEY_GUESS_KEY]
+
     board_html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ font-family:sans-serif; background:transparent; padding:8px 0; }}
+body {{ font-family:sans-serif; background:transparent; padding:6px 0; }}
 
 #word-display {{
   text-align:center;
-  font-size:clamp(20px,6vw,28px);
+  font-size:clamp(20px,6vw,26px);
   font-weight:800;
   letter-spacing:8px;
-  min-height:40px;
-  margin-bottom:10px;
-  color:#333;
-  transition: color 0.2s;
+  min-height:38px;
+  margin-bottom:8px;
+  color:#bbb;
+  transition:color 0.2s;
 }}
-
 #board {{
   display:grid;
   grid-template-columns:repeat(4,1fr);
   gap:8px;
   max-width:300px;
   width:100%;
-  margin:0 auto 14px auto;
+  margin:0 auto 10px auto;
 }}
-
 .cell {{
   display:flex; align-items:center; justify-content:center;
-  font-size:clamp(20px,7vw,30px); font-weight:800;
+  font-size:clamp(20px,7vw,28px); font-weight:800;
   border:2px solid #ddd; border-radius:10px;
   background:#f9f9f9; aspect-ratio:1;
   cursor:pointer; user-select:none; position:relative;
-  transition:background 0.15s, border-color 0.15s, transform 0.1s, box-shadow 0.15s;
-  -webkit-tap-highlight-color: transparent;
+  transition:background 0.12s, border-color 0.12s, transform 0.1s, box-shadow 0.12s;
+  -webkit-tap-highlight-color:transparent;
 }}
-.cell:active {{ transform:scale(0.93); }}
-
-/* Default hoverable */
-.cell.available:hover {{
-  border-color:#999; transform:scale(1.06); box-shadow:0 2px 8px rgba(0,0,0,0.12);
-}}
-
-/* Selected cells in path */
-.cell.selected {{
-  background:#4f86f7; border-color:#1a56db; color:white;
-  box-shadow:0 2px 8px rgba(79,134,247,0.4);
-}}
-
-/* Last selected (current tip of path) */
-.cell.tip {{
-  background:#1a56db; border-color:#0d3b9e; color:white;
-  box-shadow:0 3px 12px rgba(26,86,219,0.5);
-  transform:scale(1.08);
-}}
-
-/* Greyed out — not reachable from current tip */
-.cell.blocked {{
-  opacity:0.38; cursor:not-allowed;
-}}
-
-.seq-num {{
-  position:absolute; top:3px; right:5px;
-  font-size:10px; font-weight:700; color:rgba(255,255,255,0.9);
-}}
-
-#hint {{
-  text-align:center; font-size:13px; color:#888; min-height:18px; margin-bottom:6px;
-}}
-
+.cell.available:hover  {{ border-color:#999; transform:scale(1.06); box-shadow:0 2px 8px rgba(0,0,0,0.12); }}
+.cell.selected {{ background:#4f86f7; border-color:#1a56db; color:white; box-shadow:0 2px 8px rgba(79,134,247,0.35); }}
+.cell.tip      {{ background:#1a56db; border-color:#0d3b9e; color:white; box-shadow:0 3px 12px rgba(26,86,219,0.45); transform:scale(1.09); }}
+.cell.blocked  {{ opacity:0.32; cursor:not-allowed; }}
+.cell.done     {{ background:#16a34a; border-color:#15803d; color:white; }}
+.seq-num {{ position:absolute; top:3px; right:5px; font-size:10px; font-weight:700; color:rgba(255,255,255,0.88); }}
+#hint {{ text-align:center; font-size:13px; color:#888; min-height:18px; margin-bottom:6px; }}
 #btn-clear {{
   display:block; margin:0 auto;
   padding:7px 24px; border:none; border-radius:8px;
   font-size:14px; font-weight:700; cursor:pointer;
-  background:#f3f4f6; color:#555;
-  transition:background 0.15s;
+  background:#f3f4f6; color:#555; transition:background 0.12s;
 }}
 #btn-clear:hover {{ background:#e5e7eb; }}
-
-#submitting {{
-  display:none; text-align:center; font-size:15px;
-  color:#4CAF50; font-weight:700; margin-top:8px;
-}}
 </style>
 </head>
 <body>
-
 <div id="word-display">· · ·</div>
 <div id="board"></div>
 <div id="hint">Tap a letter to start</div>
 <button id="btn-clear" onclick="clearAll()">✖ Clear</button>
-<div id="submitting">⏳ Submitting…</div>
 
 <script>
 const LETTERS = {flat};
 const SIZE    = 4;
 const CLU_LEN = {clu_len};
+const GK      = "{gk}";   // guess key — matches Streamlit form IDs
 
-// sequence: array of {{idx, r, c}}
-let seq = [];
-let submitted = false;
+let seq       = [];
+let done      = false;
 
-const row = i => Math.floor(i / SIZE);
-const col = i => i % SIZE;
-const cellIdx = (r,c) => r*SIZE+c;
-const isAdjacent = (r1,c1,r2,c2) => Math.abs(r1-r2)+Math.abs(c1-c2)===1;
-const isInSeq = i => seq.some(s=>s.idx===i);
-const lastStep = () => seq.length ? seq[seq.length-1] : null;
-const word = () => seq.map(s=>LETTERS[s.idx]).join("");
+const rowOf = i => Math.floor(i / SIZE);
+const colOf = i => i % SIZE;
+const adj   = (r1,c1,r2,c2) => Math.abs(r1-r2)+Math.abs(c1-c2)===1;
+const inSeq = i => seq.some(s=>s.idx===i);
+const last  = () => seq.length ? seq[seq.length-1] : null;
+const word  = () => seq.map(s=>LETTERS[s.idx]).join("");
 
 function render() {{
-  const board = document.getElementById("board");
-  board.innerHTML = "";
-  const last = lastStep();
+  const boardEl = document.getElementById("board");
+  boardEl.innerHTML = "";
+  const L = last();
 
   for (let i=0; i<SIZE*SIZE; i++) {{
-    const r=row(i), c=col(i);
+    const r=rowOf(i), c=colOf(i);
     const div = document.createElement("div");
     div.className = "cell";
     div.textContent = LETTERS[i];
 
-    const posInSeq = seq.findIndex(s=>s.idx===i);
-    const inSeq    = posInSeq !== -1;
-    const isTip    = posInSeq === seq.length-1 && seq.length>0;
-    const adjacent = last && isAdjacent(last.r, last.c, r, c);
-    const canAdd   = !inSeq && (seq.length===0 || adjacent);
-    const canDesel = inSeq && isTip; // only tip can be deselected (toggle)
+    const pos    = seq.findIndex(s=>s.idx===i);
+    const inS    = pos !== -1;
+    const isTip  = inS && pos===seq.length-1;
+    const canAdd = !inS && (seq.length===0 || (L && adj(L.r,L.c,r,c)));
 
-    if (isTip) {{
+    if (done) {{
+      div.classList.add(inS ? "done" : "blocked");
+    }} else if (isTip) {{
       div.classList.add("tip");
-    }} else if (inSeq) {{
+      div.addEventListener("click", deselectTip);
+    }} else if (inS) {{
       div.classList.add("selected");
-      // Add sequence number badge
       const badge = document.createElement("span");
       badge.className = "seq-num";
-      badge.textContent = posInSeq+1;
+      badge.textContent = pos+1;
       div.appendChild(badge);
-    }} else if (!canAdd) {{
-      div.classList.add("blocked");
-    }} else {{
+    }} else if (canAdd) {{
       div.classList.add("available");
-    }}
-
-    if (canAdd) {{
       div.addEventListener("click", ()=>selectCell(i,r,c));
-    }} else if (canDesel) {{
-      // Clicking the tip letter again deselects it
-      div.addEventListener("click", ()=>deselectTip());
+    }} else {{
+      div.classList.add("blocked");
     }}
-
-    board.appendChild(div);
+    boardEl.appendChild(div);
   }}
 
-  // Word display
-  const w = word();
+  const w    = word();
   const disp = document.getElementById("word-display");
-  if (w.length===0) {{
-    disp.textContent = "· · ·";
-    disp.style.color = "#bbb";
-  }} else {{
-    disp.textContent = w.split("").join("  ");
-    disp.style.color = w.length===CLU_LEN ? "#16a34a" : "#1a56db";
-  }}
-
-  // Hint text
   const hint = document.getElementById("hint");
+
   if (w.length===0) {{
-    hint.textContent = "Tap a letter to start";
-  }} else if (w.length===CLU_LEN) {{
-    hint.textContent = "✅ Submitting your word…";
-    hint.style.color = "#16a34a";
+    disp.textContent="· · ·"; disp.style.color="#bbb";
+    hint.textContent="Tap a letter to start"; hint.style.color="#888";
+  }} else if (done) {{
+    disp.textContent=w.split("").join("  "); disp.style.color="#16a34a";
+    hint.textContent="✅ Checking…"; hint.style.color="#16a34a";
   }} else {{
-    const left = CLU_LEN - w.length;
-    hint.textContent = `${{left}} more letter${{left!==1?"s":""}} to go`;
-    hint.style.color = "#888";
+    disp.textContent=w.split("").join("  "); disp.style.color="#1a56db";
+    const left=CLU_LEN-w.length;
+    hint.textContent=`${{left}} more letter${{left!==1?"s":""}} to go`; hint.style.color="#888";
   }}
 }}
 
-function selectCell(i, r, c) {{
-  if (submitted) return;
-  seq.push({{idx:i, r, c}});
+function selectCell(i,r,c) {{
+  if (done) return;
+  seq.push({{idx:i,r,c}});
   render();
-
-  // Auto-submit when word is complete
-  if (seq.length===CLU_LEN) {{
-    submitted = true;
-    document.getElementById("submitting").style.display = "block";
-    setTimeout(()=>submitWord(), 300); // small delay so player sees green flash
-  }}
+  if (seq.length===CLU_LEN) autoSubmit();
 }}
 
 function deselectTip() {{
-  if (submitted) return;
+  if (done) return;
   seq.pop();
   render();
 }}
 
 function clearAll() {{
-  if (submitted) return;
-  seq = [];
+  if (done) return;
+  seq=[];
   render();
 }}
 
-function submitWord() {{
+function autoSubmit() {{
+  done = true;
+  render();
+
   const w = word();
-  if (!w) return;
-  // Navigate parent to ?tile_guess=WORD — Streamlit reads query params and reruns
-  const url = new URL(window.parent.location.href);
-  url.searchParams.set("tile_guess", w);
-  window.parent.location.href = url.toString();
+
+  // Strategy: find the Streamlit text input and form button inside the parent
+  // document, fill in the word, then click submit. Both live in the same
+  // Streamlit page (parent frame), not a different origin.
+  setTimeout(() => {{
+    try {{
+      const parentDoc = window.parent.document;
+
+      // The text input has a data-testid and a key we can target
+      const inputs = parentDoc.querySelectorAll('input[type="text"]');
+      let targetInput = null;
+      for (const inp of inputs) {{
+        // Match the input whose closest form contains our submit button label
+        const form = inp.closest('form');
+        if (form) {{
+          const btn = form.querySelector('button');
+          if (btn && btn.textContent.includes('submit_tile')) {{
+            targetInput = inp;
+            break;
+          }}
+        }}
+      }}
+
+      // Fallback: just grab the first visible text input in the page
+      if (!targetInput) {{
+        for (const inp of inputs) {{
+          if (inp.offsetParent !== null) {{ targetInput = inp; break; }}
+        }}
+      }}
+
+      if (targetInput) {{
+        // Set value using React's synthetic event system
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.parent.HTMLInputElement.prototype, 'value'
+        ).set;
+        nativeInputValueSetter.call(targetInput, w);
+        targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+
+        // Click the form submit button
+        const form = targetInput.closest('form');
+        if (form) {{
+          const submitBtn = form.querySelector('button[type="submit"], button');
+          if (submitBtn) {{ submitBtn.click(); }}
+        }}
+      }}
+    }} catch(e) {{
+      // If DOM manipulation fails (e.g. stricter sandbox), fall back gracefully
+      console.warn("Tile submit fallback:", e);
+    }}
+  }}, 350);
 }}
 
 render();
@@ -528,9 +526,8 @@ render();
 </body>
 </html>"""
 
-    components.html(board_html, height=420, scrolling=False)
-
-    st.caption("💡 Tap any selected letter to deselect it. Word auto-submits when complete.")
+    components.html(board_html, height=400, scrolling=False)
+    st.caption("💡 Tap the last letter again to deselect. Word auto-submits when complete.")
 
     if st.button("🏠 Back to Home", use_container_width=True):
         go_home()
@@ -599,7 +596,7 @@ elif st.session_state[KEY_STAGE] == "subscribe":
 
     st.markdown('<div class="big-title">Project Clue</div>', unsafe_allow_html=True)
     st.markdown("""
-    <div class="subscribe-wall">
+    <div style="text-align:center;padding:2rem 1rem;">
       <div style="font-size:64px;">🔒</div>
       <h2 style="font-size:clamp(22px,6vw,34px);font-weight:800;margin:0.5rem 0;">Thanks for playing!</h2>
       <p style="color:#555;font-size:clamp(14px,4vw,18px);margin-bottom:1.5rem;">
@@ -614,7 +611,7 @@ elif st.session_state[KEY_STAGE] == "subscribe":
         unsafe_allow_html=True
     )
 
-    # ← Replace this URL with your real subscribe / newsletter link
+    # ← Replace with your real subscribe link
     st.markdown("""
     <div style="text-align:center;margin:1rem 0 0.5rem 0;">
       <a href="https://your-subscribe-link.com" target="_blank"

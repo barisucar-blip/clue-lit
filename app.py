@@ -300,22 +300,109 @@ def handle_tile_click(r, c):
 # ---------------------------
 st.markdown("""
 <style>
-  .big-title { font-size:clamp(28px,8vw,48px); font-weight:800; text-align:center; margin-bottom:0.2em; }
-  .clue-box  { background:#f0f4ff; border-radius:10px; padding:12px 18px; margin-bottom:0.6rem; font-size:clamp(14px,4vw,16px); }
-  .bonus-clue-box { background:#fffbe6; border:1px solid #f6d860; border-radius:10px; padding:10px 16px; margin-bottom:0.6rem; font-size:clamp(13px,3.8vw,15px); }
-  .attempt-bar { text-align:center; font-size:15px; color:#444; margin-bottom:0.4rem; }
-  .total-score { font-size:clamp(20px,6vw,28px); font-weight:800; text-align:center; color:#4CAF50; margin:0.5rem 0 1rem 0; }
-  .history-row { font-size:clamp(13px,3.5vw,15px); padding:4px 0; }
-  .word-display { text-align:center; font-size:clamp(20px,6vw,26px); font-weight:800;
-                  letter-spacing:8px; min-height:38px; margin-bottom:6px; }
+  /* ── Keyframe animations ── */
+  @keyframes fadeSlideDown {
+    from { opacity: 0; transform: translateY(-18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.06); }
+  }
+  @keyframes popIn {
+    0%   { opacity: 0; transform: scale(0.6); }
+    70%  { transform: scale(1.12); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes shimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+  @keyframes bounceIn {
+    0%   { opacity: 0; transform: scale(0.3); }
+    50%  { opacity: 1; transform: scale(1.08); }
+    70%  { transform: scale(0.95); }
+    100% { transform: scale(1); }
+  }
+  @keyframes starBurst {
+    0%   { opacity: 0; transform: scale(0) rotate(-15deg); }
+    60%  { opacity: 1; transform: scale(1.2) rotate(5deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  @keyframes circlesPop {
+    0%   { letter-spacing: 2px; opacity: 0.4; }
+    50%  { letter-spacing: 10px; opacity: 1; }
+    100% { letter-spacing: 6px; opacity: 1; }
+  }
+  @keyframes softGlow {
+    0%, 100% { box-shadow: 0 0 0px rgba(79,134,247,0); }
+    50%       { box-shadow: 0 0 14px rgba(79,134,247,0.55); }
+  }
 
-  /* Board wrapper — constrains total grid width */
+  /* ── Title: drops in on load ── */
+  .big-title {
+    font-size: clamp(28px,8vw,48px); font-weight:800; text-align:center; margin-bottom:0.2em;
+    animation: fadeSlideDown 0.55s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  /* ── Clue box: slides up with slight delay ── */
+  .clue-box {
+    background:#f0f4ff; border-radius:10px; padding:12px 18px; margin-bottom:0.6rem;
+    font-size:clamp(14px,4vw,16px);
+    animation: fadeSlideUp 0.45s 0.15s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  /* ── Bonus clue: pops in to draw attention ── */
+  .bonus-clue-box {
+    background:#fffbe6; border:1px solid #f6d860; border-radius:10px;
+    padding:10px 16px; margin-bottom:0.6rem; font-size:clamp(13px,3.8vw,15px);
+    animation: popIn 0.4s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  /* ── Attempt circles: animate in with stagger via circlesPop ── */
+  .attempt-bar {
+    text-align:center; font-size:15px; color:#444; margin-bottom:0.4rem;
+    animation: circlesPop 0.5s 0.2s ease both;
+  }
+
+  /* ── Score: pulses gently to feel alive ── */
+  .total-score {
+    font-size:clamp(20px,6vw,28px); font-weight:800; text-align:center;
+    color:#4CAF50; margin:0.5rem 0 1rem 0;
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+
+  /* ── History rows: staggered slide up ── */
+  .history-row {
+    font-size:clamp(13px,3.5vw,15px); padding:4px 0;
+    animation: fadeSlideUp 0.35s ease both;
+  }
+
+  /* ── Word display: bounces in when letters appear ── */
+  .word-display {
+    text-align:center; font-size:clamp(20px,6vw,26px); font-weight:800;
+    letter-spacing:8px; min-height:38px; margin-bottom:6px;
+    animation: bounceIn 0.4s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  /* ── Subscribe wall icon: star burst ── */
+  .subscribe-icon {
+    animation: starBurst 0.6s cubic-bezier(0.22,1,0.36,1) both;
+    display: inline-block;
+  }
+
+  /* ── Board wrapper ── */
   .board-wrapper {
     max-width: 240px;
     margin: 0 auto 6px auto;
+    animation: fadeSlideUp 0.4s 0.1s ease both;
   }
 
-  /* Tile button overrides — normal cell */
+  /* ── Tile buttons ── */
   .board-wrapper div[data-testid="stButton"] > button {
     width: 100% !important;
     aspect-ratio: 1 / 1 !important;
@@ -326,36 +413,43 @@ st.markdown("""
     background: #f9f9f9 !important;
     color: #222 !important;
     padding: 0 !important;
-    transition: background 0.12s, border-color 0.12s, transform 0.1s !important;
+    /* Extended transition covers color, border, transform AND box-shadow */
+    transition: background 0.15s, border-color 0.15s, transform 0.12s, box-shadow 0.15s !important;
     line-height: 1 !important;
     min-height: unset !important;
   }
   .board-wrapper div[data-testid="stButton"] > button:hover {
-    border-color: #999 !important;
-    transform: scale(1.05) !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.10) !important;
+    border-color: #888 !important;
+    transform: scale(1.08) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.13) !important;
+  }
+  .board-wrapper div[data-testid="stButton"] > button:active {
+    transform: scale(0.94) !important;
   }
 
-  /* Selected tile */
+  /* Selected tile — glows softly */
   .board-wrapper div[data-testid="stButton"].tile-selected > button {
     background: #4f86f7 !important;
     border-color: #1a56db !important;
     color: white !important;
+    animation: softGlow 1.8s ease-in-out infinite !important;
   }
 
-  /* Tip tile (last selected) */
+  /* Tip tile (last selected) — pops and glows stronger */
   .board-wrapper div[data-testid="stButton"].tile-tip > button {
     background: #1a56db !important;
     border-color: #0d3b9e !important;
     color: white !important;
     transform: scale(1.09) !important;
+    box-shadow: 0 0 18px rgba(26,86,219,0.5) !important;
   }
 
   /* Blocked tile */
   .board-wrapper div[data-testid="stButton"].tile-blocked > button {
-    opacity: 0.3 !important;
+    opacity: 0.28 !important;
     cursor: not-allowed !important;
     pointer-events: none !important;
+    transform: none !important;
   }
 </style>
 """, unsafe_allow_html=True)
@@ -570,6 +664,46 @@ elif st.session_state[KEY_STAGE] == "result":
     st.markdown('<div class="big-title">Project Clue</div>', unsafe_allow_html=True)
 
     msg = st.session_state[KEY_LAST_MSG]
+    # Confetti burst on win
+    if msg and msg[0] == "win":
+        st.markdown("""
+        <div id="confetti-container" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999;overflow:hidden;"></div>
+        <script>
+        (function() {
+          const container = window.parent.document.getElementById('confetti-container')
+                         || document.getElementById('confetti-container');
+          if (!container || container.dataset.fired) return;
+          container.dataset.fired = '1';
+          const colors = ['#4f86f7','#4CAF50','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4'];
+          for (let i = 0; i < 120; i++) {
+            const el = document.createElement('div');
+            const size = Math.random() * 10 + 6;
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            const left = Math.random() * 100;
+            const delay = Math.random() * 0.8;
+            const duration = Math.random() * 2 + 1.5;
+            const rotate = Math.random() * 720;
+            el.style.cssText = `
+              position:absolute; top:-20px; left:${left}%;
+              width:${size}px; height:${size * (Math.random() > 0.5 ? 1 : 2.5)}px;
+              background:${color}; border-radius:${Math.random() > 0.5 ? '50%' : '2px'};
+              animation: confettiFall ${duration}s ${delay}s ease-in forwards;
+              opacity: 0.9;
+            `;
+            container.appendChild(el);
+          }
+          const style = document.createElement('style');
+          style.textContent = `
+            @keyframes confettiFall {
+              0%   { transform: translateY(0) rotate(0deg); opacity: 0.9; }
+              100% { transform: translateY(110vh) rotate(${Math.random()*720}deg); opacity: 0; }
+            }
+          `;
+          (window.parent.document.head || document.head).appendChild(style);
+          setTimeout(() => { container.innerHTML = ''; }, 4000);
+        })();
+        </script>
+        """, unsafe_allow_html=True)
     if msg:
         if msg[0] == "win": st.success(msg[1])
         else: st.error(msg[1])
@@ -627,7 +761,7 @@ elif st.session_state[KEY_STAGE] == "subscribe":
     st.markdown('<div class="big-title">Project Clue</div>', unsafe_allow_html=True)
     st.markdown("""
     <div style="text-align:center;padding:2rem 1rem;">
-      <div style="font-size:64px;">🔒</div>
+      <div class="subscribe-icon" style="font-size:64px;">🔒</div>
       <h2 style="font-size:clamp(22px,6vw,34px);font-weight:800;margin:0.5rem 0;">Thanks for playing!</h2>
       <p style="color:#555;font-size:clamp(14px,4vw,18px);margin-bottom:1.5rem;">
         You've completed all 3 free words.<br>

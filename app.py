@@ -8,35 +8,41 @@ import string
 BOARD_SIZE = 4
 MAX_ATTEMPTS = 5
 
-KEY_GAME_STARTED = "game_started"
-KEY_ATTEMPTS = "attempts"
-KEY_BOARD = "board"
-KEY_TARGET_WORD = "target_word"
-KEY_CLUE = "clue"
-KEY_HISTORY = "history"
-KEY_GAME_OVER = "game_over"
-KEY_PLAY_AGAIN = "play_again_prompt"
-KEY_GUESS_KEY = "guess_key"  # used to reset text input
+# Session state keys
+KEY_STAGE        = "stage"          # "home" | "game" | "result"
+KEY_ATTEMPTS     = "attempts"
+KEY_BOARD        = "board"
+KEY_TARGET_WORD  = "target_word"
+KEY_CLUE         = "clue"
+KEY_HISTORY      = "history"
+KEY_GUESS_KEY    = "guess_key"      # incremented to clear text input
+KEY_LAST_MSG     = "last_msg"       # ("type", "text") shown on result page
+KEY_USED_WORDS   = "used_words"     # tracks words already played this session
 
 WORDS = [
-    {"word": "STONE", "clue": {"length": 5, "starts_with": "S", "contains": "T", "category": "Nature"}},
-    {"word": "PLANET", "clue": {"length": 6, "starts_with": "P", "contains": "N", "category": "Space"}},
-    {"word": "TIGER", "clue": {"length": 5, "starts_with": "T", "contains": "G", "category": "Animals"}},
+    {"word": "STONE",  "clue": {"length": 5, "category": "Nature"}},
+    {"word": "PLANET", "clue": {"length": 6, "category": "Space"}},
+    {"word": "TIGER",  "clue": {"length": 5, "category": "Animals"}},
+    {"word": "FLAME",  "clue": {"length": 5, "category": "Nature"}},
+    {"word": "ORBIT",  "clue": {"length": 5, "category": "Space"}},
+    {"word": "CRANE",  "clue": {"length": 5, "category": "Animals"}},
+    {"word": "FROST",  "clue": {"length": 5, "category": "Nature"}},
+    {"word": "COMET",  "clue": {"length": 5, "category": "Space"}},
 ]
 
 # ---------------------------
 # Initialize Session State
 # ---------------------------
 for key, default in [
-    (KEY_GAME_STARTED, False),
-    (KEY_ATTEMPTS, 0),
-    (KEY_BOARD, []),
+    (KEY_STAGE,       "home"),
+    (KEY_ATTEMPTS,    0),
+    (KEY_BOARD,       []),
     (KEY_TARGET_WORD, ""),
-    (KEY_CLUE, {}),
-    (KEY_HISTORY, []),
-    (KEY_GAME_OVER, False),
-    (KEY_PLAY_AGAIN, False),
-    (KEY_GUESS_KEY, 0),
+    (KEY_CLUE,        {}),
+    (KEY_HISTORY,     []),
+    (KEY_GUESS_KEY,   0),
+    (KEY_LAST_MSG,    None),
+    (KEY_USED_WORDS,  []),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -46,13 +52,8 @@ for key, default in [
 # Board Generator
 # ---------------------------
 def generate_board(word: str) -> list[list[str]]:
-    """
-    Place each letter of `word` on a BOARD_SIZE x BOARD_SIZE grid,
-    preferring adjacent cells. Remaining cells are filled with random letters.
-    Returns a 2D list of uppercase characters.
-    """
+    """Place word letters on grid preferring adjacent cells; fill rest randomly."""
     board = [["" for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
-
     r = random.randint(0, BOARD_SIZE - 1)
     c = random.randint(0, BOARD_SIZE - 1)
     board[r][c] = word[0]
@@ -60,231 +61,277 @@ def generate_board(word: str) -> list[list[str]]:
     for letter in word[1:]:
         neighbors = [
             (r + dr, c + dc)
-            for dr, dc in [(1, 0), (-1, 0), (0, 1), (0, -1)]
-            if 0 <= r + dr < BOARD_SIZE and 0 <= c + dc < BOARD_SIZE and board[r + dr][c + dc] == ""
+            for dr, dc in [(1,0),(-1,0),(0,1),(0,-1)]
+            if 0 <= r+dr < BOARD_SIZE and 0 <= c+dc < BOARD_SIZE and board[r+dr][c+dc] == ""
         ]
-
         if neighbors:
             r, c = random.choice(neighbors)
         else:
-            empty_cells = [
-                (i, j)
-                for i in range(BOARD_SIZE)
-                for j in range(BOARD_SIZE)
-                if board[i][j] == ""
-            ]
+            empty_cells = [(i,j) for i in range(BOARD_SIZE) for j in range(BOARD_SIZE) if board[i][j] == ""]
             if not empty_cells:
-                break  # Board full — word too long for grid
+                break
             r, c = random.choice(empty_cells)
-
         board[r][c] = letter
 
-    # Fill remaining empty cells with random letters
     for i in range(BOARD_SIZE):
         for j in range(BOARD_SIZE):
             if board[i][j] == "":
                 board[i][j] = random.choice(string.ascii_uppercase)
-
     return board
 
 
 # ---------------------------
-# DFS Check
+# DFS Word Check
 # ---------------------------
 def word_exists(board: list[list[str]], word: str) -> bool:
-    """
-    Returns True if `word` can be traced on `board` by moving to
-    adjacent (up/down/left/right) cells without reusing any cell.
-    """
-    rows = len(board)
-    cols = len(board[0]) if rows > 0 else 0
-    visited = [[False] * cols for _ in range(rows)]
+    """Return True if word can be traced on board via adjacent non-reused cells."""
+    rows, cols = len(board), len(board[0]) if board else 0
+    visited = [[False]*cols for _ in range(rows)]
 
-    def dfs(r, c, index):
-        if index == len(word):
-            return True
-        if r < 0 or r >= rows or c < 0 or c >= cols:
-            return False
-        if visited[r][c] or board[r][c] != word[index]:
-            return False
-
+    def dfs(r, c, idx):
+        if idx == len(word): return True
+        if not (0 <= r < rows and 0 <= c < cols): return False
+        if visited[r][c] or board[r][c] != word[idx]: return False
         visited[r][c] = True
-        for dr, dc in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-            if dfs(r + dr, c + dc, index + 1):
+        for dr, dc in [(1,0),(-1,0),(0,1),(0,-1)]:
+            if dfs(r+dr, c+dc, idx+1):
                 visited[r][c] = False
                 return True
         visited[r][c] = False
         return False
 
-    for i in range(rows):
-        for j in range(cols):
-            if dfs(i, j, 0):
-                return True
-    return False
+    return any(dfs(i, j, 0) for i in range(rows) for j in range(cols))
 
 
 # ---------------------------
 # Input Sanitizer
 # ---------------------------
 def sanitize_guess(raw: str) -> str:
-    """Strip non-alpha characters and uppercase the result."""
     return "".join(filter(str.isalpha, raw)).upper()
 
 
 # ---------------------------
-# Start a New Game (helper)
+# Pick a word not yet played
 # ---------------------------
+def pick_unused_word() -> dict:
+    used = st.session_state[KEY_USED_WORDS]
+    available = [w for w in WORDS if w["word"] not in used]
+    # If all words have been used, reset the pool so the game can continue
+    if not available:
+        st.session_state[KEY_USED_WORDS] = []
+        available = WORDS
+    chosen = random.choice(available)
+    st.session_state[KEY_USED_WORDS].append(chosen["word"])
+    return chosen
+
+
+# ---------------------------
+# Stage Transitions
+# ---------------------------
+def go_home():
+    st.session_state[KEY_STAGE] = "home"
+    st.session_state[KEY_LAST_MSG] = None
+
 def start_new_game():
-    level = random.choice(WORDS)
+    level = pick_unused_word()
     st.session_state[KEY_TARGET_WORD] = level["word"].upper()
-    st.session_state[KEY_CLUE] = level["clue"]
-    st.session_state[KEY_BOARD] = generate_board(st.session_state[KEY_TARGET_WORD])
-    st.session_state[KEY_ATTEMPTS] = 0
-    st.session_state[KEY_GAME_STARTED] = True
-    st.session_state[KEY_GAME_OVER] = False
-    st.session_state[KEY_PLAY_AGAIN] = False
-    st.session_state[KEY_GUESS_KEY] += 1  # resets the text input
+    st.session_state[KEY_CLUE]        = level["clue"]
+    st.session_state[KEY_BOARD]       = generate_board(level["word"].upper())
+    st.session_state[KEY_ATTEMPTS]    = 0
+    st.session_state[KEY_GUESS_KEY]  += 1
+    st.session_state[KEY_LAST_MSG]    = None
+    st.session_state[KEY_STAGE]       = "game"
+
+def go_result(msg_type: str, msg_text: str, history_entry: dict):
+    st.session_state[KEY_HISTORY].append(history_entry)
+    st.session_state[KEY_LAST_MSG] = (msg_type, msg_text)
+    st.session_state[KEY_STAGE]    = "result"
 
 
 # ---------------------------
-# UI — Title
+# Shared CSS
 # ---------------------------
-st.title("Project Clue")
+st.markdown("""
+<style>
+    .big-title { font-size: clamp(28px, 8vw, 48px); font-weight: 800; text-align: center; margin-bottom: 0.2em; }
+    .subtitle  { text-align: center; color: #666; margin-bottom: 1.5em; font-size: clamp(14px, 4vw, 18px); }
+    .board-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        max-width: 280px;
+        width: 100%;
+        margin: 0 auto 1.2rem auto;
+    }
+    .board-cell {
+        display: flex; align-items: center; justify-content: center;
+        font-size: clamp(18px, 6vw, 28px); font-weight: bold;
+        border: 2px solid #ccc; border-radius: 8px;
+        background: #f9f9f9; aspect-ratio: 1;
+    }
+    .clue-box {
+        background: #f0f4ff; border-radius: 10px;
+        padding: 12px 18px; margin-bottom: 1rem;
+        font-size: clamp(14px, 4vw, 16px);
+    }
+    .attempt-bar {
+        text-align: center; font-size: 15px;
+        color: #444; margin-bottom: 0.8rem;
+    }
+    .history-row { font-size: clamp(13px, 3.5vw, 15px); padding: 4px 0; }
+</style>
+""", unsafe_allow_html=True)
 
-if st.button("Start New Game"):
-    start_new_game()
 
-# ---------------------------
-# Display Game
-# ---------------------------
-if st.session_state[KEY_GAME_STARTED]:
+# ==============================
+# STAGE 1 — HOME
+# ==============================
+if st.session_state[KEY_STAGE] == "home":
 
-    # --- Game Rules ---
-    st.info(
-        "**How to play:**  \n"
-        "1. Look at the letter board below.  \n"
-        "2. Use the clues to guess the hidden word.  \n"
-        "3. Your word must be traceable on the board by moving to adjacent cells "
-        "(up, down, left, right) — no reusing the same cell.  \n"
-        f"4. You have **{MAX_ATTEMPTS} attempts**. Good luck!"
+    st.markdown('<div class="big-title">Project Clue</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">A word tracing puzzle game</div>', unsafe_allow_html=True)
+
+    st.markdown("### How to play")
+    st.markdown(
+        "1. You'll see a **4×4 grid** of letters.\n"
+        "2. Use the clues to guess the hidden word.\n"
+        "3. Your word must be traceable by moving to **adjacent cells** "
+        "(up, down, left, right) — you cannot reuse the same cell.\n"
+        f"4. You have **{MAX_ATTEMPTS} attempts** per round.\n"
+        "5. Try to solve as many words as you can!"
     )
 
-    # --- Board ---
-    st.subheader("Board")
+    st.write("")
+    if st.button("▶️ Start New Game", use_container_width=True):
+        start_new_game()
+        st.rerun()
 
-    # Build the board as a single HTML CSS grid — works reliably on both
-    # desktop and mobile without relying on st.columns() which breaks on
-    # narrow screens (all cells collapse into one column).
-    cell_html = ""
-    for row in st.session_state[KEY_BOARD]:
-        for letter in row:
-            cell_html += (
-                f"<div style='"
-                f"display:flex; align-items:center; justify-content:center;"
-                f"font-size:clamp(16px, 5vw, 26px); font-weight:bold;"
-                f"border:2px solid #ccc; border-radius:8px;"
-                f"background:#f9f9f9; aspect-ratio:1;'>"
-                f"{letter}</div>"
-            )
+    # Show session record if any games played
+    if st.session_state[KEY_HISTORY]:
+        st.divider()
+        wins  = sum(1 for h in st.session_state[KEY_HISTORY] if h["result"] == "win")
+        total = len(st.session_state[KEY_HISTORY])
+        st.markdown(f"**Your record this session:** {wins}W / {total - wins}L")
 
-    board_html = f"""
-    <div style="
-        display: grid;
-        grid-template-columns: repeat({BOARD_SIZE}, 1fr);
-        gap: 8px;
-        max-width: 320px;
-        width: 100%;
-        margin: 0 auto 1rem auto;
-    ">
-        {cell_html}
-    </div>
-    """
-    st.markdown(board_html, unsafe_allow_html=True)
 
-    # --- Clues (Length and Category only — Starts With and Contains removed) ---
-    st.subheader("Clues")
+# ==============================
+# STAGE 2 — GAME
+# ==============================
+elif st.session_state[KEY_STAGE] == "game":
+
+    st.markdown('<div class="big-title">Project Clue</div>', unsafe_allow_html=True)
+
+    # Board
+    cell_html = "".join(
+        f'<div class="board-cell">{letter}</div>'
+        for row in st.session_state[KEY_BOARD]
+        for letter in row
+    )
+    st.markdown(f'<div class="board-grid">{cell_html}</div>', unsafe_allow_html=True)
+
+    # Clues
     clue = st.session_state[KEY_CLUE]
-    st.write("Length:", clue["length"])
-    st.write("Category:", clue["category"])
+    st.markdown(
+        f'<div class="clue-box">'
+        f'🔤 <b>Length:</b> {clue["length"]} letters &nbsp;|&nbsp; '
+        f'📂 <b>Category:</b> {clue["category"]}'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
-    st.write(f"**Attempts:** {st.session_state[KEY_ATTEMPTS]}/{MAX_ATTEMPTS}")
+    # Attempts indicator
+    attempts = st.session_state[KEY_ATTEMPTS]
+    circles = "🟢" * (MAX_ATTEMPTS - attempts) + "🔴" * attempts
+    st.markdown(f'<div class="attempt-bar">{circles} &nbsp; {attempts}/{MAX_ATTEMPTS} attempts used</div>', unsafe_allow_html=True)
 
-    # --- Guess Input ---
-    # The key changes after each valid submission, which forces Streamlit
-    # to remount the widget and clear it — no "Upgrade" prompt triggered.
+    # Guess input
     guess_input = st.text_input(
         "Enter your guess:",
         key=f"guess_input_{st.session_state[KEY_GUESS_KEY]}"
     )
 
-    if st.button("Submit Guess"):
-        if st.session_state[KEY_ATTEMPTS] >= MAX_ATTEMPTS:
-            st.error("No attempts left! Start a new game.")
+    if st.button("Submit Guess ➜", use_container_width=True):
+        if attempts >= MAX_ATTEMPTS:
+            st.error("No attempts left!")
         else:
             guess = sanitize_guess(guess_input)
 
-            # --- Format checks (don't cost an attempt) ---
             if not guess:
                 st.warning("Please enter a word.")
             elif len(guess) != clue["length"]:
                 st.warning(f"Wrong length — expected {clue['length']} letters.")
             else:
-                # Increment attempt and clear the input box
                 st.session_state[KEY_ATTEMPTS] += 1
-                st.session_state[KEY_GUESS_KEY] += 1  # clears input on next render
-
+                st.session_state[KEY_GUESS_KEY] += 1
                 target = st.session_state[KEY_TARGET_WORD]
 
                 if guess == target and word_exists(st.session_state[KEY_BOARD], guess):
-                    st.success("🎉 Correct! You found the word!")
-                    st.session_state[KEY_HISTORY].append({
-                        "word": target, "result": "win",
-                        "attempts": st.session_state[KEY_ATTEMPTS]
-                    })
-                    st.session_state[KEY_GAME_STARTED] = False
-                    st.session_state[KEY_PLAY_AGAIN] = True
+                    go_result(
+                        "win",
+                        f"🎉 Correct! You found **{target}** in {st.session_state[KEY_ATTEMPTS]} attempt(s)!",
+                        {"word": target, "result": "win", "attempts": st.session_state[KEY_ATTEMPTS]}
+                    )
+                    st.rerun()
+
+                elif st.session_state[KEY_ATTEMPTS] >= MAX_ATTEMPTS:
+                    go_result(
+                        "loss",
+                        f"💀 Out of attempts! The word was **{target}**.",
+                        {"word": target, "result": "loss", "attempts": st.session_state[KEY_ATTEMPTS]}
+                    )
+                    st.rerun()
 
                 elif word_exists(st.session_state[KEY_BOARD], guess):
                     st.error("That word exists on the board but isn't the answer. Try again!")
-
                 else:
-                    st.error("Word cannot be formed from the board.")
+                    st.error("Word cannot be formed from the board. Try again!")
 
-                # Game over — out of attempts
-                if st.session_state[KEY_ATTEMPTS] >= MAX_ATTEMPTS and st.session_state[KEY_GAME_STARTED]:
-                    st.error(f"💀 Game Over! The word was: **{target}**")
-                    st.session_state[KEY_HISTORY].append({
-                        "word": target, "result": "loss",
-                        "attempts": st.session_state[KEY_ATTEMPTS]
-                    })
-                    st.session_state[KEY_GAME_STARTED] = False
-                    st.session_state[KEY_PLAY_AGAIN] = True
+    if st.button("🏠 Back to Home", use_container_width=True):
+        go_home()
+        st.rerun()
 
-# ---------------------------
-# Play Again Prompt
-# ---------------------------
-if st.session_state[KEY_PLAY_AGAIN]:
-    st.divider()
-    st.subheader("Would you like to play again?")
-    col_yes, col_no = st.columns(2)
-    with col_yes:
-        if st.button("✅ Yes, play again!"):
+
+# ==============================
+# STAGE 3 — RESULT
+# ==============================
+elif st.session_state[KEY_STAGE] == "result":
+
+    st.markdown('<div class="big-title">Project Clue</div>', unsafe_allow_html=True)
+
+    # Show win/loss message
+    msg = st.session_state[KEY_LAST_MSG]
+    if msg:
+        if msg[0] == "win":
+            st.success(msg[1])
+        else:
+            st.error(msg[1])
+
+    st.write("")
+
+    # Play again / go home buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("▶️ Play Again", use_container_width=True):
             start_new_game()
             st.rerun()
-    with col_no:
-        if st.button("❌ No, I'm done"):
-            st.session_state[KEY_PLAY_AGAIN] = False
-            st.success("Thanks for playing Project Clue! 👋")
+    with col2:
+        if st.button("🏠 Home", use_container_width=True):
+            go_home()
+            st.rerun()
 
-# ---------------------------
-# History / Score Tracker
-# ---------------------------
-if st.session_state[KEY_HISTORY]:
+    # Session History
     st.divider()
-    st.subheader("📊 Session History")
-    wins = sum(1 for h in st.session_state[KEY_HISTORY] if h["result"] == "win")
-    total = len(st.session_state[KEY_HISTORY])
-    st.write(f"Record: **{wins} wins / {total - wins} losses** out of {total} games")
-    for i, h in enumerate(reversed(st.session_state[KEY_HISTORY]), 1):
+    st.markdown("### 📊 Session History")
+    history = st.session_state[KEY_HISTORY]
+    wins  = sum(1 for h in history if h["result"] == "win")
+    total = len(history)
+    st.markdown(f"**Record: {wins} wins / {total - wins} losses** out of {total} games")
+
+    st.write("")
+    for i, h in enumerate(reversed(history), 1):
         icon = "✅" if h["result"] == "win" else "❌"
-        st.write(f"{icon} Game {total - i + 1}: `{h['word']}` — {h['attempts']} attempt(s)")
+        st.markdown(
+            f'<div class="history-row">{icon} Game {total - i + 1}: '
+            f'<code>{h["word"]}</code> — {h["attempts"]} attempt(s)</div>',
+            unsafe_allow_html=True
+        )

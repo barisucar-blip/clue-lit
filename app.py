@@ -171,14 +171,35 @@ if st.session_state[KEY_GAME_STARTED]:
 
     # --- Board ---
     st.subheader("Board")
-    col_widgets = st.columns(BOARD_SIZE)
+
+    # Build the board as a single HTML CSS grid — works reliably on both
+    # desktop and mobile without relying on st.columns() which breaks on
+    # narrow screens (all cells collapse into one column).
+    cell_html = ""
     for row in st.session_state[KEY_BOARD]:
-        for col_widget, letter in zip(col_widgets, row):
-            col_widget.markdown(
-                f"<div style='text-align:center; font-size:24px; font-weight:bold; "
-                f"padding:10px; border:1px solid #ccc; border-radius:6px;'>{letter}</div>",
-                unsafe_allow_html=True,
+        for letter in row:
+            cell_html += (
+                f"<div style='"
+                f"display:flex; align-items:center; justify-content:center;"
+                f"font-size:clamp(16px, 5vw, 26px); font-weight:bold;"
+                f"border:2px solid #ccc; border-radius:8px;"
+                f"background:#f9f9f9; aspect-ratio:1;'>"
+                f"{letter}</div>"
             )
+
+    board_html = f"""
+    <div style="
+        display: grid;
+        grid-template-columns: repeat({BOARD_SIZE}, 1fr);
+        gap: 8px;
+        max-width: 320px;
+        width: 100%;
+        margin: 0 auto 1rem auto;
+    ">
+        {cell_html}
+    </div>
+    """
+    st.markdown(board_html, unsafe_allow_html=True)
 
     # --- Clues (Length and Category only — Starts With and Contains removed) ---
     st.subheader("Clues")

@@ -5,19 +5,23 @@ import string
 # ---------------------------
 # Constants
 # ---------------------------
-BOARD_SIZE = 4
-MAX_ATTEMPTS = 5
+BOARD_SIZE   = 4
+MAX_ATTEMPTS = 3
+
+# Points awarded based on which attempt the player wins on
+SCORE_MAP = {1: 10, 2: 5, 3: 3}
 
 # Session state keys
-KEY_STAGE        = "stage"          # "home" | "game" | "result"
-KEY_ATTEMPTS     = "attempts"
-KEY_BOARD        = "board"
-KEY_TARGET_WORD  = "target_word"
-KEY_CLUE         = "clue"
-KEY_HISTORY      = "history"
-KEY_GUESS_KEY    = "guess_key"      # incremented to clear text input
-KEY_LAST_MSG     = "last_msg"       # ("type", "text") shown on result page
-KEY_USED_WORDS   = "used_words"     # tracks words already played this session
+KEY_STAGE       = "stage"         # "home" | "game" | "result"
+KEY_ATTEMPTS    = "attempts"
+KEY_BOARD       = "board"
+KEY_TARGET_WORD = "target_word"
+KEY_CLUE        = "clue"
+KEY_HISTORY     = "history"
+KEY_GUESS_KEY   = "guess_key"     # incremented to clear text input
+KEY_LAST_MSG    = "last_msg"      # ("type", "text") shown on result page
+KEY_USED_WORDS  = "used_words"    # tracks words already played this session
+KEY_TOTAL_SCORE = "total_score"   # cumulative score across all games
 
 WORDS = [
     {"word": "STONE",  "clue": {"length": 5, "category": "Nature"}},
@@ -43,6 +47,7 @@ for key, default in [
     (KEY_GUESS_KEY,   0),
     (KEY_LAST_MSG,    None),
     (KEY_USED_WORDS,  []),
+    (KEY_TOTAL_SCORE, 0),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -111,12 +116,30 @@ def sanitize_guess(raw: str) -> str:
 
 
 # ---------------------------
+# Progressive Clue Helper
+# ---------------------------
+def get_bonus_clues(target: str, attempts_used: int) -> list[str]:
+    """
+    Return bonus clues revealed after each failed attempt.
+    After attempt 1: starting letter.
+    After attempt 2: a random middle letter with its position.
+    """
+    clues = []
+    if attempts_used >= 1:
+        clues.append(f"🔡 **Starting letter:** {target[0]}")
+    if attempts_used >= 2:
+        # Pick a middle letter (not first or last)
+        mid_idx = len(target) // 2
+        clues.append(f"🔠 **Letter {mid_idx + 1} in the word:** {target[mid_idx]}")
+    return clues
+
+
+# ---------------------------
 # Pick a word not yet played
 # ---------------------------
 def pick_unused_word() -> dict:
     used = st.session_state[KEY_USED_WORDS]
     available = [w for w in WORDS if w["word"] not in used]
-    # If all words have been used, reset the pool so the game can continue
     if not available:
         st.session_state[KEY_USED_WORDS] = []
         available = WORDS
@@ -129,7 +152,7 @@ def pick_unused_word() -> dict:
 # Stage Transitions
 # ---------------------------
 def go_home():
-    st.session_state[KEY_STAGE] = "home"
+    st.session_state[KEY_STAGE]    = "home"
     st.session_state[KEY_LAST_MSG] = None
 
 def start_new_game():
@@ -153,8 +176,8 @@ def go_result(msg_type: str, msg_text: str, history_entry: dict):
 # ---------------------------
 st.markdown("""
 <style>
-    .big-title { font-size: clamp(28px, 8vw, 48px); font-weight: 800; text-align: center; margin-bottom: 0.2em; }
-    .subtitle  { text-align: center; color: #666; margin-bottom: 1.5em; font-size: clamp(14px, 4vw, 18px); }
+    .big-title  { font-size: clamp(28px, 8vw, 48px); font-weight: 800; text-align: center; margin-bottom: 0.2em; }
+    .subtitle   { text-align: center; color: #666; margin-bottom: 1.5em; font-size: clamp(14px, 4vw, 18px); }
     .board-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -171,14 +194,26 @@ st.markdown("""
     }
     .clue-box {
         background: #f0f4ff; border-radius: 10px;
-        padding: 12px 18px; margin-bottom: 1rem;
+        padding: 12px 18px; margin-bottom: 0.6rem;
         font-size: clamp(14px, 4vw, 16px);
     }
-    .attempt-bar {
-        text-align: center; font-size: 15px;
-        color: #444; margin-bottom: 0.8rem;
+    .bonus-clue-box {
+        background: #fffbe6; border: 1px solid #f6d860;
+        border-radius: 10px; padding: 10px 16px;
+        margin-bottom: 0.6rem; font-size: clamp(13px, 3.8vw, 15px);
     }
-    .history-row { font-size: clamp(13px, 3.5vw, 15px); padding: 4px 0; }
+    .attempt-bar   { text-align: center; font-size: 15px; color: #444; margin-bottom: 0.8rem; }
+    .score-badge   {
+        display: inline-block; background: #4CAF50; color: white;
+        font-weight: bold; border-radius: 20px;
+        padding: 4px 14px; font-size: clamp(13px, 4vw, 16px);
+        margin-bottom: 0.5rem;
+    }
+    .history-row   { font-size: clamp(13px, 3.5vw, 15px); padding: 4px 0; }
+    .total-score   {
+        font-size: clamp(20px, 6vw, 28px); font-weight: 800;
+        text-align: center; color: #4CAF50; margin: 0.5rem 0 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -193,12 +228,16 @@ if st.session_state[KEY_STAGE] == "home":
 
     st.markdown("### How to play")
     st.markdown(
-        "1. You'll see a **4×4 grid** of letters.\n"
-        "2. Use the clues to guess the hidden word.\n"
-        "3. Your word must be traceable by moving to **adjacent cells** "
-        "(up, down, left, right) — you cannot reuse the same cell.\n"
+        f"1. You'll see a **4×4 grid** of letters.\n"
+        f"2. Use the clues to guess the hidden word.\n"
+        f"3. Your word must be traceable by moving to **adjacent cells** "
+        f"(up, down, left, right) — you cannot reuse the same cell.\n"
         f"4. You have **{MAX_ATTEMPTS} attempts** per round.\n"
-        "5. Try to solve as many words as you can!"
+        f"5. **Bonus clues unlock as you fail:**\n"
+        f"   - ❌ After attempt 1: the **starting letter** is revealed.\n"
+        f"   - ❌ After attempt 2: a **middle letter** and its position are revealed.\n"
+        f"6. **Scoring:** Guess on attempt 1 = **10 pts** · attempt 2 = **5 pts** · attempt 3 = **3 pts**.\n"
+        f"7. Try to score as high as possible!"
     )
 
     st.write("")
@@ -206,12 +245,12 @@ if st.session_state[KEY_STAGE] == "home":
         start_new_game()
         st.rerun()
 
-    # Show session record if any games played
     if st.session_state[KEY_HISTORY]:
         st.divider()
         wins  = sum(1 for h in st.session_state[KEY_HISTORY] if h["result"] == "win")
         total = len(st.session_state[KEY_HISTORY])
         st.markdown(f"**Your record this session:** {wins}W / {total - wins}L")
+        st.markdown(f'<div class="total-score">🏆 Total Score: {st.session_state[KEY_TOTAL_SCORE]} pts</div>', unsafe_allow_html=True)
 
 
 # ==============================
@@ -229,8 +268,11 @@ elif st.session_state[KEY_STAGE] == "game":
     )
     st.markdown(f'<div class="board-grid">{cell_html}</div>', unsafe_allow_html=True)
 
-    # Clues
-    clue = st.session_state[KEY_CLUE]
+    # Base clues
+    clue     = st.session_state[KEY_CLUE]
+    attempts = st.session_state[KEY_ATTEMPTS]
+    target   = st.session_state[KEY_TARGET_WORD]
+
     st.markdown(
         f'<div class="clue-box">'
         f'🔤 <b>Length:</b> {clue["length"]} letters &nbsp;|&nbsp; '
@@ -239,10 +281,21 @@ elif st.session_state[KEY_STAGE] == "game":
         unsafe_allow_html=True
     )
 
-    # Attempts indicator
-    attempts = st.session_state[KEY_ATTEMPTS]
-    circles = "🟢" * (MAX_ATTEMPTS - attempts) + "🔴" * attempts
-    st.markdown(f'<div class="attempt-bar">{circles} &nbsp; {attempts}/{MAX_ATTEMPTS} attempts used</div>', unsafe_allow_html=True)
+    # Progressive bonus clues (shown after each failed attempt)
+    bonus_clues = get_bonus_clues(target, attempts)
+    if bonus_clues:
+        for bc in bonus_clues:
+            st.markdown(f'<div class="bonus-clue-box">{bc}</div>', unsafe_allow_html=True)
+
+    # Attempts indicator + points preview
+    remaining = MAX_ATTEMPTS - attempts
+    circles   = "🟢" * remaining + "🔴" * attempts
+    pts_next  = SCORE_MAP.get(attempts + 1, 0)
+    st.markdown(
+        f'<div class="attempt-bar">{circles} &nbsp; {attempts}/{MAX_ATTEMPTS} used'
+        f' &nbsp;|&nbsp; Next correct guess = <b>{pts_next} pts</b></div>',
+        unsafe_allow_html=True
+    )
 
     # Guess input
     guess_input = st.text_input(
@@ -263,21 +316,23 @@ elif st.session_state[KEY_STAGE] == "game":
             else:
                 st.session_state[KEY_ATTEMPTS] += 1
                 st.session_state[KEY_GUESS_KEY] += 1
-                target = st.session_state[KEY_TARGET_WORD]
+                attempt_number = st.session_state[KEY_ATTEMPTS]
 
                 if guess == target and word_exists(st.session_state[KEY_BOARD], guess):
+                    pts = SCORE_MAP.get(attempt_number, 0)
+                    st.session_state[KEY_TOTAL_SCORE] += pts
                     go_result(
                         "win",
-                        f"🎉 Correct! You found **{target}** in {st.session_state[KEY_ATTEMPTS]} attempt(s)!",
-                        {"word": target, "result": "win", "attempts": st.session_state[KEY_ATTEMPTS]}
+                        f"🎉 Correct! You found **{target}** on attempt {attempt_number} — **+{pts} points!**",
+                        {"word": target, "result": "win", "attempts": attempt_number, "points": pts}
                     )
                     st.rerun()
 
-                elif st.session_state[KEY_ATTEMPTS] >= MAX_ATTEMPTS:
+                elif attempt_number >= MAX_ATTEMPTS:
                     go_result(
                         "loss",
-                        f"💀 Out of attempts! The word was **{target}**.",
-                        {"word": target, "result": "loss", "attempts": st.session_state[KEY_ATTEMPTS]}
+                        f"💀 Out of attempts! The word was **{target}**. No points this round.",
+                        {"word": target, "result": "loss", "attempts": attempt_number, "points": 0}
                     )
                     st.rerun()
 
@@ -298,7 +353,7 @@ elif st.session_state[KEY_STAGE] == "result":
 
     st.markdown('<div class="big-title">Project Clue</div>', unsafe_allow_html=True)
 
-    # Show win/loss message
+    # Win/loss message
     msg = st.session_state[KEY_LAST_MSG]
     if msg:
         if msg[0] == "win":
@@ -306,9 +361,13 @@ elif st.session_state[KEY_STAGE] == "result":
         else:
             st.error(msg[1])
 
-    st.write("")
+    # Total score display
+    st.markdown(
+        f'<div class="total-score">🏆 Total Score: {st.session_state[KEY_TOTAL_SCORE]} pts</div>',
+        unsafe_allow_html=True
+    )
 
-    # Play again / go home buttons
+    # Play again / go home
     col1, col2 = st.columns(2)
     with col1:
         if st.button("▶️ Play Again", use_container_width=True):
@@ -323,15 +382,17 @@ elif st.session_state[KEY_STAGE] == "result":
     st.divider()
     st.markdown("### 📊 Session History")
     history = st.session_state[KEY_HISTORY]
-    wins  = sum(1 for h in history if h["result"] == "win")
-    total = len(history)
+    wins    = sum(1 for h in history if h["result"] == "win")
+    total   = len(history)
     st.markdown(f"**Record: {wins} wins / {total - wins} losses** out of {total} games")
 
     st.write("")
     for i, h in enumerate(reversed(history), 1):
         icon = "✅" if h["result"] == "win" else "❌"
+        pts  = h.get("points", 0)
+        pts_label = f" · **+{pts} pts**" if pts > 0 else " · *0 pts*"
         st.markdown(
             f'<div class="history-row">{icon} Game {total - i + 1}: '
-            f'<code>{h["word"]}</code> — {h["attempts"]} attempt(s)</div>',
+            f'<code>{h["word"]}</code> — attempt {h["attempts"]}{pts_label}</div>',
             unsafe_allow_html=True
         )
